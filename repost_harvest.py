@@ -89,9 +89,14 @@ def _cursor_and_more(raw):
     return has_more, cursor
 
 
-def harvest_brand(prov, handle, max_pages):
-    """Return (brand_followers, [creator dicts]) for one brand's repost feed."""
-    prof = prov.fetch_profile(handle)
+def harvest_brand(prov, handle, max_pages, meter=None):
+    """Return (brand_followers, [creator dicts]) for one brand's repost feed.
+    meter() -- if given -- is called once per charged API call so the caller can record
+    harvest spend into its ledger (the enrich path meters separately via Enricher._call)."""
+    def _tick():
+        if meter:
+            meter()
+    prof = prov.fetch_profile(handle); _tick()
     sec = _dig(prof, ["secUid", "sec_uid"])
     bfoll = _dig(prof, ["followerCount", "follower_count"])
     if not sec:
@@ -99,7 +104,7 @@ def harvest_brand(prov, handle, max_pages):
 
     creators, seen, cursor = {}, set(), 0
     for _ in range(max_pages):
-        raw = prov.fetch_user_repost(sec, cursor=cursor, count=30)
+        raw = prov.fetch_user_repost(sec, cursor=cursor, count=30); _tick()
         items = _find_list(raw) or []
         for it in items:
             au = it.get("author") or {}

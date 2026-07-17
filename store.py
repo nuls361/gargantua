@@ -4,10 +4,13 @@ Supabase-direct storage for the always-on worker (replaces local SQLite on the s
 PostgREST over the service_role key -> bypasses RLS, full read/write. Only stdlib +
 requests (already a dependency), so it deploys clean on Railway with no extra infra.
 
-Method names mirror db.DB where they overlap (record_spend, status_counts, upsert_stub,
-stubs_to_enrich ...) so the harvest/enrich pipeline can swap SQLite -> Supabase with
-minimal churn. Column names here are the tt_creators (Supabase) names, not the old
-SQLite ones -- upsert_stub maps the harvest dict (nickname -> display_name) on the way in.
+Method names/signatures mirror db.DB where the harvest/enrich pipeline touches them
+(total_spent, record_spend(endpoint, cost), update_creator, upsert_post, hashtag_seen,
+enqueue_hashtag ...) so Enricher runs unchanged against Supabase. Column names here are
+the tt_creators (Supabase) names; the worker builds tt_creators-native stub dicts.
+
+Spend is counted in-memory during a job (no network per API call) and flushed to
+spend_ledger once per job -> cheap + gives per-job granularity for the dashboard.
 """
 from __future__ import annotations
 
@@ -45,6 +48,8 @@ class Supa:
             "Authorization": f"Bearer {self.key}",
             "Content-Type": "application/json",
         })
+        self._spend_base: float | None = None   # all-time ledger sum, fetched once
+        self._session_spend = 0.0                # accrued this job, not yet flushed
 
     # ---- low-level PostgREST -------------------------------------------------
     def _get(self, table: str, params: dict) -> list:
@@ -62,11 +67,11 @@ class Supa:
         cr = r.headers.get("Content-Range", "*/0")   # e.g. "0-0/1234"
         return int(cr.split("/")[-1]) if "/" in cr else 0
 
-    def _insert(self, table: str, rows, *, upsert: bool = False,
-                on_conflict: str | None = None, returning: str = "minimal") -> list:
+    def _insert(self, table: str, rows, *, on_conflict: str | None = None,
+                resolution: str | None = None, returning: str = "minimal") -> list:
         prefer = []
-        if upsert:
-            prefer.append("resolution=merge-duplicates")
+        if resolution:
+            prefer.append(f"resolution={resolution}-duplicates")   # merge | ignore
         prefer.append(f"return={returning}")
         params = {"on_conflict": on_conflict} if on_conflict else {}
         r = self.s.post(f"{self.url}/{table}", params=params, json=rows,
@@ -87,7 +92,7 @@ class Supa:
 
     def claim_next_job(self) -> dict | None:
         """Pop the oldest pending job. The PATCH is filtered on status=pending so if a
-        second worker grabbed it first, we get [] back and try again -- atomic claim."""
+        second worker grabbed it first we get [] back -- atomic claim."""
         rows = self._get("scrape_jobs", {
             "select": "*", "status": "eq.pending",
             "order": "priority.asc,created_at.asc", "limit": "1"})
@@ -111,28 +116,103 @@ class Supa:
         }, returning="representation")
         return rows[0] if rows else {}
 
-    # ---- spend ledger --------------------------------------------------------
-    def record_spend(self, usd: float, *, channel: str | None = None,
-                     job_id=None, calls: int = 1):
-        self._insert("spend_ledger",
-                     {"usd": usd, "channel": channel, "job_id": job_id, "calls": calls})
+    # ---- spend ledger (db.DB-compatible) -------------------------------------
+    def _base(self) -> float:
+        if self._spend_base is None:
+            rows = self._get("spend_ledger", {"select": "usd"})
+            self._spend_base = sum(float(r["usd"]) for r in rows)
+        return self._spend_base
+
+    def record_spend(self, endpoint: str, cost_usd: float) -> None:
+        """Enricher calls this per charged API call. Accrue in memory only; the ledger
+        row is written once per job by flush_spend -> no network per call."""
+        self._session_spend += cost_usd
+
+    def total_spent(self) -> float:
+        return self._base() + self._session_spend
+
+    def flush_spend(self, job_id=None, channel: str | None = None) -> None:
+        if self._session_spend <= 0:
+            return
+        self._insert("spend_ledger", {"usd": round(self._session_spend, 4),
+                                      "channel": channel, "job_id": job_id})
+        self._spend_base = self._base() + self._session_spend
+        self._session_spend = 0.0
 
     def spent_today(self) -> float:
         rows = self._get("spend_ledger", {"select": "usd", "ts": f"gte.{_today_start()}"})
-        return sum(float(r["usd"]) for r in rows)
+        return sum(float(r["usd"]) for r in rows) + self._session_spend
 
-    def total_spent(self) -> float:
-        rows = self._get("spend_ledger", {"select": "usd"})
-        return sum(float(r["usd"]) for r in rows)
+    # ---- creators ------------------------------------------------------------
+    def upsert_stubs(self, rows: list) -> list:
+        """Batch-insert lead-stubs. On sec_uid conflict, DO NOTHING (never downgrade an
+        already-enriched row back to a stub). Returns the rows that were NEWLY inserted."""
+        rows = [dict(r) for r in rows if r.get("sec_uid")]
+        for r in rows:
+            r.setdefault("enrichment_status", "stub")
+            r.setdefault("first_seen_at", _now())
+        if not rows:
+            return []
+        return self._insert("tt_creators", rows, on_conflict="sec_uid",
+                            resolution="ignore", returning="representation")
+
+    def upsert_stub(self, c: dict) -> bool:
+        return bool(self.upsert_stubs([c]))
+
+    def update_creator(self, sec_uid: str, fields: dict) -> None:
+        """Targeted UPDATE that preserves unnamed columns (so enriching a stub keeps its
+        source tags). Mirrors db.DB.update_creator."""
+        fields = dict(fields)
+        fields["last_enriched_at"] = _now()
+        self._patch("tt_creators", {"sec_uid": f"eq.{sec_uid}"}, fields)
+
+    def upsert_creator(self, c: dict) -> None:
+        c = dict(c)
+        c.pop("raw", None)                       # tt_creators has no raw column
+        c["last_enriched_at"] = _now()
+        c.setdefault("first_seen_at", _now())
+        self._insert("tt_creators", c, on_conflict="sec_uid", resolution="merge")
+
+    def stubs_to_enrich(self, *, min_followers=1000, max_followers=250000,
+                        require_email=True, dach_only=True, limit=0) -> list:
+        conds = ["enrichment_status.eq.stub",
+                 f"follower_count.gte.{min_followers}",
+                 f"follower_count.lte.{max_followers}"]
+        if require_email:
+            conds.append("email.not.is.null")
+        if dach_only:
+            conds.append("region_hint.eq.dach")
+        params = {"and": f"({','.join(conds)})", "order": "follower_count.desc"}
+        if limit:
+            params["limit"] = str(limit)
+        return self._get("tt_creators", params)
+
+    def upsert_post(self, p: dict) -> None:
+        """No-op: raw posts live in the source project, not lbug. The lead tool only
+        needs the derived aggregates, which land on the creator row. (Phase 4+ may add
+        a tt_posts table here if the sound channel needs it.)"""
+        return None
 
     # ---- source tagging ------------------------------------------------------
-    def add_creator_source(self, sec_uid: str, source_type: str, source_value: str,
-                           *, job_id=None, requested_by=None):
-        """Idempotent link (creator <-> source). PK (sec_uid, type, value) dedupes."""
-        self._insert("tt_creator_sources", {
+    def add_creator_sources(self, links: list) -> None:
+        """Batch idempotent (creator <-> source) links. PK (sec_uid,type,value) dedupes."""
+        links = [l for l in links if l.get("sec_uid")]
+        if links:
+            self._insert("tt_creator_sources", links,
+                         on_conflict="sec_uid,source_type,source_value", resolution="ignore")
+
+    def add_creator_source(self, sec_uid, source_type, source_value, *, job_id=None,
+                           requested_by=None):
+        self.add_creator_sources([{
             "sec_uid": sec_uid, "source_type": source_type, "source_value": source_value,
-            "job_id": job_id, "requested_by": requested_by,
-        }, upsert=True, on_conflict="sec_uid,source_type,source_value")
+            "job_id": job_id, "requested_by": requested_by}])
+
+    # ---- hashtag feedback loop (Phase 5) -- inert for now --------------------
+    def hashtag_seen(self, name: str) -> bool:
+        return True          # True => _harvest skips enqueue; no hashtag queue in lbug yet
+
+    def enqueue_hashtag(self, name: str, source: str = "") -> bool:
+        return False
 
     # ---- read model (heartbeat / dashboard) ----------------------------------
     def creator_count(self) -> int:

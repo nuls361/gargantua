@@ -49,8 +49,9 @@ create table if not exists public.spend_ledger (
 create index if not exists spend_ledger_ts_idx on public.spend_ledger (ts);
 
 -- ------------------------------------------- generalize source tag on creators
-alter table public.tt_creators add column if not exists source_type  text;
-alter table public.tt_creators add column if not exists source_value text;
+alter table public.tt_creators add column if not exists source_type      text;
+alter table public.tt_creators add column if not exists source_value     text;
+alter table public.tt_creators add column if not exists comment_de_ratio real;  -- audience-language rescue signal
 
 -- ------------------------------------------------------------------------ RLS
 -- Read-model for logged-in team members; the worker uses the service_role key
