@@ -1,0 +1,32 @@
+# --- Python ---
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# --- Secrets / env ---
+.env
+.env.*
+!.env.example
+
+# --- Working data & PII (lives in Supabase, never in git) ---
+*.csv
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+raw/
+backups/
+market_intelligence.json
+market_intelligence.html
+captions_*.txt
+
+# --- OS / editor ---
+.DS_Store
+*.log
+
+# --- Node (frontend also has its own .gitignore) ---
+node_modules/
+dist/
+*.tsbuildinfo
