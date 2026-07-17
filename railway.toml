@@ -1,0 +1,9 @@
+# Railway service config for the always-on scraper worker.
+# Nixpacks auto-detects Python from requirements.txt at the repo root.
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "python -u worker.py"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
