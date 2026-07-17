@@ -11,6 +11,8 @@ from __future__ import annotations
 import parse
 from provider import ProviderError
 from repost_harvest import harvest_brand, region_from_email
+from hashtag_harvest import harvest_hashtag
+from creator_harvest import harvest_creator
 from sound_harvest import resolve_music_id, harvest_sound, is_dach_author
 from enrich import Enricher, BudgetExceeded
 
@@ -19,7 +21,7 @@ JOB_BUDGET_USD = 2.00          # per-job enrich cap if the job doesn't set one
 ENRICH_MIN, ENRICH_MAX = 1000, 250_000   # the selective-enrich follower tier
 
 
-def _stub_row(c: dict, source_type: str, source_value: str, region_default):
+def _stub_row(c: dict, source_type: str, source_value: str, source_channel: str, region_default):
     email = c.get("email")
     region = region_from_email(email) or region_default
     row = {
@@ -28,7 +30,8 @@ def _stub_row(c: dict, source_type: str, source_value: str, region_default):
         "verified": bool(c.get("verified")),
         "email": email, "email_source": "bio_regex" if email else None,
         "email_type": c.get("email_type"),
-        "source_channel": "repost", "source_brand": source_value,
+        "source_channel": source_channel,
+        "source_brand": source_value if source_type == "brand" else None,
         "source_type": source_type, "source_value": source_value,
         "region_hint": region, "enrichment_status": "stub",
         "discovered_via": source_type, "discovered_from": source_value,
@@ -36,34 +39,28 @@ def _stub_row(c: dict, source_type: str, source_value: str, region_default):
     return row, region
 
 
-def run_brand_job(prov, supa, job, *, log=print) -> dict:
-    """Harvest a brand's repost feed -> stubs (tagged) -> selectively enrich the
-    policy-matching NEW creators within the job's budget. Returns stats for the job row."""
+def _store_and_enrich(prov, supa, job, creators, *, source_type, source_value,
+                      source_channel, log) -> dict:
+    """Shared path for channels whose authors carry follower stats inline (brand, hashtag,
+    creator): stub -> tag source -> enrich the policy-matching stubs within the job budget.
+    Already-enriched creators are skipped (no re-spend)."""
     opts = job.get("options") or {}
-    handle = job["source_value"].lstrip("@")
-    source_value = f"@{handle}"
-    pages = int(opts.get("pages", DEFAULT_PAGES))
     do_enrich = opts.get("enrich", True)
     dach_only = opts.get("dach_only", True)
     region_default = opts.get("region")               # 'dach' | None
     budget = float(opts.get("budget_usd", JOB_BUDGET_USD))
 
-    bfoll, creators = harvest_brand(
-        prov, handle, pages, meter=lambda: supa.record_spend("repost", 0.001))
-
     rows, region_by = [], {}
     for c in creators:
-        row, region = _stub_row(c, "brand", source_value, region_default)
+        row, region = _stub_row(c, source_type, source_value, source_channel, region_default)
         rows.append(row)
         region_by[c["sec_uid"]] = region
     new_secs = {r["sec_uid"] for r in supa.upsert_stubs(rows)}
     supa.add_creator_sources([{
-        "sec_uid": c["sec_uid"], "source_type": "brand", "source_value": source_value,
+        "sec_uid": c["sec_uid"], "source_type": source_type, "source_value": source_value,
         "job_id": job["id"], "requested_by": job.get("requested_by"),
     } for c in creators])
 
-    # enrich the policy-matching creators from THIS harvest that are still stubs
-    # (skip ones already enriched via another source -> no re-spend)
     candidates = [c for c in creators
                   if ENRICH_MIN <= (c.get("followers") or 0) <= ENRICH_MAX and c.get("email")
                   and (not dach_only or region_by.get(c["sec_uid"]) == "dach")]
@@ -76,8 +73,8 @@ def run_brand_job(prov, supa, job, *, log=print) -> dict:
             sec = c["sec_uid"]
             if status.get(sec) != "stub":              # already enriched -> don't re-spend
                 continue
-            fol = c.get("followers") or 0
-            stub = {"sec_uid": sec, "handle": c["handle"], "follower_count": fol,
+            stub = {"sec_uid": sec, "handle": c["handle"],
+                    "follower_count": c.get("followers") or 0,
                     "region_hint": region_by.get(sec), "email": c.get("email")}
             try:
                 _, outcome, _ = enr.enrich_from_stub(stub)
@@ -90,13 +87,40 @@ def run_brand_job(prov, supa, job, *, log=print) -> dict:
             if outcome in ("qualified", "out_of_market"):
                 enriched += 1
 
-    return {
-        "brand_followers": bfoll,
-        "found": len(creators),
-        "stored": len(new_secs),
-        "enriched": enriched,
-        "spent_usd": round(supa.total_spent(), 4),
-    }
+    return {"found": len(creators), "stored": len(new_secs), "enriched": enriched,
+            "spent_usd": round(supa.total_spent(), 4)}
+
+
+def run_brand_job(prov, supa, job, *, log=print) -> dict:
+    """A brand's repost feed -> creators it amplified."""
+    handle = job["source_value"].lstrip("@")
+    pages = int((job.get("options") or {}).get("pages", DEFAULT_PAGES))
+    bfoll, creators = harvest_brand(
+        prov, handle, pages, meter=lambda: supa.record_spend("repost", 0.001))
+    stats = _store_and_enrich(prov, supa, job, creators, source_type="brand",
+                              source_value=f"@{handle}", source_channel="repost", log=log)
+    stats["brand_followers"] = bfoll
+    return stats
+
+
+def run_hashtag_job(prov, supa, job, *, log=print) -> dict:
+    """A hashtag's video feed -> creators posting under it."""
+    tag = job["source_value"].lstrip("#")
+    pages = int((job.get("options") or {}).get("pages", DEFAULT_PAGES))
+    creators = harvest_hashtag(prov, tag, pages,
+                               meter=lambda: supa.record_spend("hashtag", 0.001))
+    return _store_and_enrich(prov, supa, job, creators, source_type="hashtag",
+                             source_value=f"#{tag}", source_channel="hashtag", log=log)
+
+
+def run_creator_job(prov, supa, job, *, log=print) -> dict:
+    """A seed creator's orbit -> @-mentioned collab partners (+ following if public)."""
+    seed = job["source_value"].lstrip("@")
+    pages = int((job.get("options") or {}).get("pages", 3))   # posts pages scanned for mentions
+    creators = harvest_creator(prov, seed, pages,
+                               meter=lambda: supa.record_spend("creator", 0.001))
+    return _store_and_enrich(prov, supa, job, creators, source_type="creator",
+                             source_value=f"@{seed}", source_channel="creator", log=log)
 
 
 def run_sound_job(prov, supa, job, *, log=print) -> dict:
@@ -185,7 +209,7 @@ def run_sound_job(prov, supa, job, *, log=print) -> dict:
 
 DISPATCH = {
     "brand": run_brand_job,
+    "hashtag": run_hashtag_job,
+    "creator": run_creator_job,
     "sound": run_sound_job,
-    # "hashtag": run_hashtag_job,   # next
-    # "creator": run_creator_job,   # next
 }
