@@ -187,6 +187,21 @@ class Supa:
             params["limit"] = str(limit)
         return self._get("tt_creators", params)
 
+    def statuses(self, sec_uids: list) -> dict:
+        """Map sec_uid -> enrichment_status for a set of creators (one query).
+        Lets a job enrich the stubs it just harvested that aren't enriched yet, while
+        skipping ones already enriched (no re-spend)."""
+        if not sec_uids:
+            return {}
+        out = {}
+        for i in range(0, len(sec_uids), 200):        # keep the URL length sane
+            chunk = sec_uids[i:i + 200]
+            inlist = ",".join(f'"{s}"' for s in chunk)
+            rows = self._get("tt_creators",
+                             {"sec_uid": f"in.({inlist})", "select": "sec_uid,enrichment_status"})
+            out.update({r["sec_uid"]: r["enrichment_status"] for r in rows})
+        return out
+
     def upsert_post(self, p: dict) -> None:
         """No-op: raw posts live in the source project, not lbug. The lead tool only
         needs the derived aggregates, which land on the creator row. (Phase 4+ may add

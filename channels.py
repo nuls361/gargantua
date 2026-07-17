@@ -60,19 +60,21 @@ def run_brand_job(prov, supa, job, *, log=print) -> dict:
         "job_id": job["id"], "requested_by": job.get("requested_by"),
     } for c in creators])
 
+    # enrich the policy-matching creators from THIS harvest that are still stubs
+    # (skip ones already enriched via another source -> no re-spend)
+    candidates = [c for c in creators
+                  if ENRICH_MIN <= (c.get("followers") or 0) <= ENRICH_MAX and c.get("email")
+                  and (not dach_only or region_by.get(c["sec_uid"]) == "dach")]
     enriched = 0
-    if do_enrich and new_secs:
+    if do_enrich and candidates:
+        status = supa.statuses([c["sec_uid"] for c in candidates])
         enr = Enricher(prov, supa, budget_usd=supa.total_spent() + budget,
                        max_harvest_followers=ENRICH_MAX)
-        for c in creators:
+        for c in candidates:
             sec = c["sec_uid"]
-            if sec not in new_secs:                    # already known -> don't re-spend
+            if status.get(sec) != "stub":              # already enriched -> don't re-spend
                 continue
             fol = c.get("followers") or 0
-            if not (ENRICH_MIN <= fol <= ENRICH_MAX and c.get("email")):
-                continue
-            if dach_only and region_by.get(sec) != "dach":
-                continue
             stub = {"sec_uid": sec, "handle": c["handle"], "follower_count": fol,
                     "region_hint": region_by.get(sec), "email": c.get("email")}
             try:
