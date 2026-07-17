@@ -8,8 +8,10 @@ repost_harvest.harvest_brand (pure API); only storage is now Supabase-direct.
 """
 from __future__ import annotations
 
+import parse
 from provider import ProviderError
 from repost_harvest import harvest_brand, region_from_email
+from sound_harvest import resolve_music_id, harvest_sound, is_dach_author
 from enrich import Enricher, BudgetExceeded
 
 DEFAULT_PAGES = 8
@@ -97,9 +99,93 @@ def run_brand_job(prov, supa, job, *, log=print) -> dict:
     }
 
 
+def run_sound_job(prov, supa, job, *, log=print) -> dict:
+    """Resolve a sound (id/URL/name) -> its video authors -> DACH pre-filter (region/
+    language, free) -> stubs (tagged) -> for DACH+email candidates, backfill followers
+    via one profile call and enrich. Non-DACH authors are still stored as reference stubs."""
+    opts = job.get("options") or {}
+    pages = int(opts.get("pages", 10))
+    do_enrich = opts.get("enrich", True)
+    budget = float(opts.get("budget_usd", JOB_BUDGET_USD))
+
+    music_id, title = resolve_music_id(prov, job["source_value"])
+    if not music_id:
+        return {"found": 0, "stored": 0, "enriched": 0, "spent_usd": round(supa.total_spent(), 4),
+                "error": "could not resolve sound"}
+    source_value = f"sound:{music_id}"
+
+    authors = harvest_sound(prov, music_id, pages,
+                            meter=lambda: supa.record_spend("music", 0.001))
+
+    rows = []
+    for a in authors:
+        dach = is_dach_author(a)
+        rows.append({
+            "sec_uid": a["sec_uid"], "handle": a["handle"], "display_name": a.get("nickname"),
+            "bio": a.get("bio"), "verified": bool(a.get("verified")),
+            "email": a.get("email"), "email_source": "bio_regex" if a.get("email") else None,
+            "email_type": a.get("email_type"),
+            "language": a.get("language"), "country": a.get("region"),
+            "source_channel": "sound", "source_brand": None,
+            "source_type": "sound", "source_value": source_value,
+            "region_hint": "dach" if dach else None, "enrichment_status": "stub",
+            "discovered_via": "sound", "discovered_from": source_value,
+        })
+    new_secs = {r["sec_uid"] for r in supa.upsert_stubs(rows)}
+    supa.add_creator_sources([{
+        "sec_uid": a["sec_uid"], "source_type": "sound", "source_value": source_value,
+        "job_id": job["id"], "requested_by": job.get("requested_by"),
+    } for a in authors])
+
+    # enrich the DACH candidates with an email; followers aren't inline for the sound
+    # channel, so backfill via one profile call, then apply the tier gate + enrich.
+    candidates = [a for a in authors if is_dach_author(a) and a.get("email")]
+    enriched = 0
+    if do_enrich and candidates:
+        status = supa.statuses([a["sec_uid"] for a in candidates])
+        enr = Enricher(prov, supa, budget_usd=supa.total_spent() + budget,
+                       max_harvest_followers=ENRICH_MAX)
+        for a in candidates:
+            sec = a["sec_uid"]
+            if status.get(sec) != "stub":
+                continue
+            try:
+                prof = enr._call(lambda: prov.fetch_profile(a["handle"]), "profile")
+            except BudgetExceeded:
+                log(f"  budget ${budget:.2f} reached — stop enriching")
+                break
+            except ProviderError:
+                continue
+            pf = parse.profile_fields(prof.get("data", prof) if isinstance(prof, dict) else {})
+            fol = pf.get("followers")
+            if fol:
+                supa.update_creator(sec, {"follower_count": fol})
+            if isinstance(fol, int) and not (ENRICH_MIN <= fol <= ENRICH_MAX):
+                continue                                   # out of the bookable tier
+            stub = {"sec_uid": sec, "handle": a["handle"], "follower_count": fol,
+                    "region_hint": "dach", "email": a["email"]}
+            try:
+                _, outcome, _ = enr.enrich_from_stub(stub)
+            except BudgetExceeded:
+                log(f"  budget ${budget:.2f} reached — stop enriching")
+                break
+            except ProviderError as e:
+                log(f"  @{a['handle']}: {str(e)[:50]}")
+                continue
+            if outcome in ("qualified", "out_of_market"):
+                enriched += 1
+
+    return {
+        "music_id": music_id, "sound_title": title,
+        "found": len(authors), "dach_prefilter": len(candidates),
+        "stored": len(new_secs), "enriched": enriched,
+        "spent_usd": round(supa.total_spent(), 4),
+    }
+
+
 DISPATCH = {
     "brand": run_brand_job,
+    "sound": run_sound_job,
     # "hashtag": run_hashtag_job,   # next
     # "creator": run_creator_job,   # next
-    # "sound":   run_sound_job,     # Phase 4
 }

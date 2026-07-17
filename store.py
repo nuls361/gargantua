@@ -147,13 +147,19 @@ class Supa:
     def upsert_stubs(self, rows: list) -> list:
         """Batch-insert lead-stubs. On sec_uid conflict, DO NOTHING (never downgrade an
         already-enriched row back to a stub). Returns the rows that were NEWLY inserted."""
-        rows = [dict(r) for r in rows if r.get("sec_uid")]
+        seen, deduped = set(), []
         for r in rows:
+            sec = r.get("sec_uid")
+            if not sec or sec in seen:          # drop in-batch duplicate sec_uids
+                continue
+            seen.add(sec)
+            r = dict(r)
             r.setdefault("enrichment_status", "stub")
             r.setdefault("first_seen_at", _now())
-        if not rows:
+            deduped.append(r)
+        if not deduped:
             return []
-        return self._insert("tt_creators", rows, on_conflict="sec_uid",
+        return self._insert("tt_creators", deduped, on_conflict="sec_uid",
                             resolution="ignore", returning="representation")
 
     def upsert_stub(self, c: dict) -> bool:
@@ -211,9 +217,15 @@ class Supa:
     # ---- source tagging ------------------------------------------------------
     def add_creator_sources(self, links: list) -> None:
         """Batch idempotent (creator <-> source) links. PK (sec_uid,type,value) dedupes."""
-        links = [l for l in links if l.get("sec_uid")]
-        if links:
-            self._insert("tt_creator_sources", links,
+        seen, deduped = set(), []
+        for l in links:
+            key = (l.get("sec_uid"), l.get("source_type"), l.get("source_value"))
+            if not key[0] or key in seen:       # drop in-batch duplicate links
+                continue
+            seen.add(key)
+            deduped.append(l)
+        if deduped:
+            self._insert("tt_creator_sources", deduped,
                          on_conflict="sec_uid,source_type,source_value", resolution="ignore")
 
     def add_creator_source(self, sec_uid, source_type, source_value, *, job_id=None,

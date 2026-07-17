@@ -69,6 +69,11 @@ class TikHubProvider(Provider):
     # Post comments -> used to VERIFY audience language (German comments = DACH audience),
     # a second DACH signal beyond the caption. Commenter follower stats are NOT inline.
     EP_COMMENTS = "/api/v1/tiktok/app/v3/fetch_video_comments"
+    # Sound discovery: a music_id -> videos using that sound. Each video's author is a
+    # creator riding that trend. Resolve a sound name/URL to a music_id first.
+    EP_MUSIC_SEARCH = "/api/v1/tiktok/app/v3/fetch_music_search_result"
+    EP_MUSIC_VIDEOS = "/api/v1/tiktok/app/v3/fetch_music_video_list"
+    EP_MUSIC_DETAIL = "/api/v1/tiktok/app/v3/fetch_music_detail"
 
     def __init__(self, api_key: str | None = None, timeout: int = 30):
         self.api_key = api_key or os.environ.get("TIKHUB_API_KEY")
@@ -168,3 +173,18 @@ class TikHubProvider(Provider):
         is English (common for bigger creators)."""
         return self._get(self.EP_COMMENTS,
                          {"aweme_id": aweme_id, "count": count, "cursor": cursor})
+
+    def fetch_music_search(self, keyword: str, offset: int = 0, count: int = 20) -> dict:
+        """Keyword -> matching sounds. Used to resolve a sound name to a music_id."""
+        return self._get(self.EP_MUSIC_SEARCH,
+                         {"keyword": keyword, "offset": offset, "count": count})
+
+    def fetch_music_video_list(self, music_id: str, cursor: int = 0, count: int = 30) -> dict:
+        """music_id -> videos using that sound (each carries its author = a creator
+        riding the trend). The sound-channel's core call."""
+        return self._get(self.EP_MUSIC_VIDEOS,
+                         {"music_id": music_id, "count": count, "cursor": cursor})
+
+    def fetch_music_detail(self, music_id: str) -> dict:
+        """music_id -> sound metadata (title, author, play count)."""
+        return self._get(self.EP_MUSIC_DETAIL, {"music_id": music_id})
