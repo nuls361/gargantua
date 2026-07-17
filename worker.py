@@ -61,7 +61,12 @@ def main():
                   flush=True)
             # --- Phase 2/5 dispatch grafts here ---
         except Exception as e:
-            print(f"[worker] loop error: {type(e).__name__}: {e}", flush=True)
+            if "401" in str(e):
+                print("[worker] Supabase 401 — SUPABASE_SECRET_KEY rejected by lbug. "
+                      "Use the project's service_role (secret) key, not anon/publishable, "
+                      "no trailing whitespace.", flush=True)
+            else:
+                print(f"[worker] loop error: {type(e).__name__}: {e}", flush=True)
         _sleep(POLL_SECONDS)
 
     print("[worker] shutting down cleanly.", flush=True)
