@@ -83,12 +83,14 @@ function Sidebar({ email }: { email: string }) {
       </button>
       <nav>
         <NavLink to="/dashboard">Dashboard</NavLink>
+        <div className="nav-section">Entdecken</div>
         <NavLink to="/search">Search</NavLink>
         <NavLink to="/brands">Brands</NavLink>
-        <NavLink to="/lists">Lists</NavLink>
-        <NavLink to="/leads">Leads</NavLink>
-        <NavLink to="/campaigns">Campaigns</NavLink>
         <NavLink to="/hashtags">Hashtags</NavLink>
+        <div className="nav-section">Pipeline</div>
+        <NavLink to="/lists">Listen</NavLink>
+        <NavLink to="/leads">Leads</NavLink>
+        <NavLink to="/campaigns">Kampagnen</NavLink>
       </nav>
       <div className="spacer" />
       <nav className="nav-secondary">

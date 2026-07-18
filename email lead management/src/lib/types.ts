@@ -113,6 +113,34 @@ export function contactState(c: {
   return "contacted";
 }
 
+// ---- Axis 1: pipeline (where a lead is on the way to outreach) -------------
+export type PipelineStage = "roh" | "angereichert" | "ausgespielt" | "aussortiert";
+
+export const PIPELINE: Record<PipelineStage, { label: string; cls: string }> = {
+  roh:          { label: "Roh",          cls: "pl-roh" },
+  angereichert: { label: "Angereichert", cls: "pl-angereichert" },
+  ausgespielt:  { label: "Ausgespielt",  cls: "pl-ausgespielt" },
+  aussortiert:  { label: "Aussortiert",  cls: "pl-aussortiert" },
+};
+
+// The pipeline axis is derived from the (legacy, overloaded) status. Contact
+// outcomes (replied/bounced/do_not_contact) mean the lead WAS played out — that's
+// pipeline-complete; the outcome itself lives on the contact-state axis.
+export function pipelineStage(status: LeadStatus): PipelineStage {
+  switch (status) {
+    case "sourced":
+    case "new":
+      return "roh";
+    case "enriched":
+    case "queued":
+      return "angereichert";
+    case "filtered":
+      return "aussortiert";
+    default:
+      return "ausgespielt"; // in_instantly, replied, bounced, do_not_contact
+  }
+}
+
 export const STATUS_LABELS: Record<LeadStatus, string> = {
   new: "New",
   queued: "Queued",
