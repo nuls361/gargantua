@@ -26,6 +26,9 @@ type SortKey = "follower_count" | "engagement_median" | "sponsored_count";
 const fmt = (n: number | null) =>
   n == null ? "—" : n >= 1000 ? `${(n / 1000).toFixed(n >= 100000 ? 0 : 1).replace(/\.0$/, "")}k` : `${n}`;
 
+// Niches are stored lowercase (fashion, home & interior); show them title-cased.
+const niche = (s: string | null) => (s ? s.replace(/\b\w/g, (c) => c.toUpperCase()) : s);
+
 // ER band -> profile read (encodes the mood/UGC/influencer learning)
 function erCell(er: number | null) {
   if (er == null) return <span className="muted">—</span>;
@@ -126,7 +129,7 @@ export default function Creators() {
         <select value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="">Alle Niches</option>
           {categories.map((c) => (
-            <option key={c} value={c}>{c}</option>
+            <option key={c} value={c}>{niche(c)}</option>
           ))}
         </select>
         <select value={emailType} onChange={(e) => setEmailType(e.target.value)}>
@@ -148,7 +151,7 @@ export default function Creators() {
 
       {error && <div className="error">{error}</div>}
 
-      <div className="table-wrap">
+      <div className="table-wrap table-fit">
         <table>
           <thead>
             <tr>
@@ -178,8 +181,8 @@ export default function Creators() {
                   <td className="num">{fmt(r.follower_count)}</td>
                   <td>{erCell(r.engagement_median)}</td>
                   <td>
-                    {r.category || <span className="muted">—</span>}
-                    {r.sub_niche && <div className="muted" style={{ fontSize: 12 }}>{r.sub_niche}</div>}
+                    {niche(r.category) || <span className="muted">—</span>}
+                    {r.sub_niche && <div className="muted" style={{ fontSize: 12 }}>{niche(r.sub_niche)}</div>}
                   </td>
                   <td style={{ fontSize: 13 }}>
                     {r.email ? (

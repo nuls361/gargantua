@@ -863,3 +863,12 @@ code {
 /* sidebar section labels */
 .nav-section { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--muted); padding: 14px 12px 4px; opacity: 0.7; }
+
+/* Search/creators table fits the viewport width — never scrolls horizontally.
+   Long cells (email, handle) wrap; numeric columns stay on one line. */
+.table-fit { overflow-x: hidden; }
+.table-fit table { width: 100%; }
+.table-fit th,
+.table-fit td { white-space: normal; overflow-wrap: anywhere; }
+.table-fit td.num,
+.table-fit .num { white-space: nowrap; }
