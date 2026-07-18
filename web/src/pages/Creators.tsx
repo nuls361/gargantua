@@ -32,10 +32,10 @@ const niche = (s: string | null) => (s ? s.replace(/\b\w/g, (c) => c.toUpperCase
 // ER band -> profile read (encodes the mood/UGC/influencer learning)
 function erCell(er: number | null) {
   if (er == null) return <span className="muted">—</span>;
-  const [cls, label] =
-    er < 2 ? ["pill-neutral", "UGC / tot"] : er > 14 ? ["pill-warn", "mood?"] : ["pill-good", "influencer"];
+  const [color, label] =
+    er < 2 ? ["#767d90", "UGC / tot"] : er > 14 ? ["#8a6100", "mood?"] : ["#16794a", "influencer"];
   return (
-    <span className={`pill num ${cls}`} title={label}>
+    <span className="num" style={{ color, fontWeight: 600 }} title={label}>
       {er}%
     </span>
   );
@@ -185,14 +185,7 @@ export default function Creators() {
                     {r.sub_niche && <div className="muted" style={{ fontSize: 12 }}>{niche(r.sub_niche)}</div>}
                   </td>
                   <td style={{ fontSize: 13 }}>
-                    {r.email ? (
-                      <>
-                        <a href={`mailto:${r.email}`}>{r.email}</a>
-                        {r.email_type === "management" && <span className="pill pill-enriched" style={{ marginLeft: 6 }}>mgmt</span>}
-                      </>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
+                    {r.email ? <a href={`mailto:${r.email}`}>{r.email}</a> : <span className="muted">—</span>}
                   </td>
                   <td className="num">{r.sponsored_count || 0}</td>
                   <td className="muted" style={{ fontSize: 12 }}>{r.source_brand}</td>
