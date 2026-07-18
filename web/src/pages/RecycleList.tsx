@@ -3,109 +3,103 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { toCsv } from "../lib/csv";
 import CreatorTable from "../components/CreatorTable";
+import Pager from "../components/Pager";
 import type { Creator } from "../lib/types";
 
-const DAY_OPTIONS = [7, 14, 30, 60, 90];
+// Recycle = leads we contacted, that didn't reply/bounce/unsubscribe, gone cold for a
+// while — ready to re-approach. Three dynamic segments by idle time (days since last
+// contact). All derived live from the contact-state fields.
 
+const SEGMENTS = [30, 60, 90];
+const PAGE = 50;
 const CREATOR_SELECT =
   "id, handle, tiktok_username, platform, email, region_label, label, sample_creator, status, filter_reason, enriched_at, enriched_payload, campaign_id, date_added, added_to_instantly_at, first_contacted_at, last_contacted_at, contact_count, last_outcome, next_eligible_at, do_not_contact";
 
+const cutoff = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+
+// eligible-to-recycle: contacted, no reply/bounce/unsubscribe, not DNC, idle >= days.
+function eligible<T>(qb: T, days: number): T {
+  return (qb as any)
+    .gt("contact_count", 0)
+    .eq("do_not_contact", false)
+    .or("last_outcome.is.null,last_outcome.eq.sent")
+    .lte("last_contacted_at", cutoff(days)) as T;
+}
+
 export default function RecycleList() {
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(60);
   const [rows, setRows] = useState<Creator[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [counts, setCounts] = useState<Record<number, number>>({});
+
+  useEffect(() => {
+    SEGMENTS.forEach(async (d) => {
+      const { count } = await eligible(
+        supabase.from("creators").select("id", { count: "exact", head: true }), d);
+      setCounts((c) => ({ ...c, [d]: count ?? 0 }));
+    });
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
-    // 1. Which creators are idle for >= `days` (server-side, ordered most-idle first).
-    const { data: cand } = await supabase.rpc("recycle_candidates", { p_days: days });
-    const ids = ((cand ?? []) as { id: string }[]).map((c) => c.id);
-    if (ids.length === 0) {
-      setRows([]);
-      setLoading(false);
-      return;
-    }
-    // 2. Fetch the full creator rows for the single lead table (chunked).
-    const chunks: string[][] = [];
-    for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200));
-    const fetched = (
-      await Promise.all(
-        chunks.map((ch) =>
-          supabase.from("creators").select(CREATOR_SELECT).in("id", ch).then((r) => r.data ?? [])
-        )
-      )
-    ).flat() as unknown as Creator[];
-    // Preserve the RPC's most-idle-first ordering.
-    const byId = new Map(fetched.map((c) => [c.id, c]));
-    setRows(ids.map((id) => byId.get(id)).filter(Boolean) as Creator[]);
+    const { data, count } = await eligible(
+      supabase.from("creators").select(CREATOR_SELECT, { count: "exact" }), days)
+      .order("last_contacted_at", { ascending: true })
+      .range(page * PAGE, page * PAGE + PAGE - 1);
+    setRows((data ?? []) as unknown as Creator[]);
+    setTotal(count ?? 0);
     setLoading(false);
-  }, [days]);
+  }, [days, page]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useEffect(() => { setPage(0); }, [days]);
+  useEffect(() => { void load(); }, [load]);
 
-  function exportCsv() {
-    if (rows.length === 0) return;
+  async function exportCsv() {
+    const { data } = await eligible(
+      supabase.from("creators").select("handle, tiktok_username, email"), days)
+      .order("last_contacted_at", { ascending: true }).limit(5000);
     const csv = toCsv(
-      rows.map((r) => ({
-        username: r.handle || r.tiktok_username || "",
-        email: r.email ?? "",
-      }))
+      ((data ?? []) as { handle: string | null; tiktok_username: string | null; email: string | null }[])
+        .map((r) => ({ username: r.handle || r.tiktok_username || "", email: r.email ?? "" }))
     );
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `recycle-${days}d-${rows.length}.csv`;
+    a.download = `recycle-${days}d-${total}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
   return (
     <div>
-      <div className="toolbar">
-        <Link to="/lists">← Lists</Link>
-        <h2 style={{ margin: 0 }}>♻️ Recycle</h2>
-        <span className="pill pill-new">dynamic</span>
+      <div className="ws-head">
+        <Link to="/lists" className="ws-back">← Listen</Link>
+        <h2>♻️ Recycle</h2>
       </div>
 
       <p className="muted">
-        Active leads (in Instantly) that haven’t been mailed in the selected
-        window — ready to recycle into a new campaign. The “Campaigns” and “Idle”
-        columns show what each creator already received and how long they’ve been
-        cold.
+        Leads, die wir schon kontaktiert haben, die <strong>nicht geantwortet/gebounced</strong> sind
+        und seit einer Weile kalt liegen — bereit für einen neuen Anlauf. Drei Segmente nach
+        Idle-Zeit. (Die 60-Tage-Sperrfrist gilt beim Senden weiterhin.)
       </p>
 
       <div className="toolbar">
-        <div>
-          <label>Idle for at least</label>
-          <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
-            {DAY_OPTIONS.map((d) => (
-              <option key={d} value={d}>{d} days</option>
-            ))}
-          </select>
+        <div className="segmented">
+          {SEGMENTS.map((d) => (
+            <button key={d} className={`seg ${days === d ? "active" : ""}`} onClick={() => setDays(d)}>
+              {d}+ Tage {counts[d] != null ? `(${counts[d].toLocaleString("de-DE")})` : ""}
+            </button>
+          ))}
         </div>
         <div className="grow" />
-        <span className="muted" style={{ fontSize: 12 }}>
-          {loading ? "Loading…" : `${rows.length.toLocaleString("en-GB")} candidates`}
-        </span>
-        <button onClick={exportCsv} disabled={rows.length === 0}>
-          Export CSV
-        </button>
+        <button onClick={exportCsv} disabled={total === 0}>Export CSV</button>
       </div>
 
-      <CreatorTable
-        creators={rows}
-        loading={loading}
-        emptyText="No creators to recycle in this window."
-      />
-
-      {rows.length >= 1000 && (
-        <p className="muted" style={{ fontSize: 12 }}>
-          Showing the first 1,000 (most idle first).
-        </p>
-      )}
+      <CreatorTable creators={rows} loading={loading} searchable={false}
+        emptyText="Keine Creator zum Recyceln in diesem Fenster." />
+      <Pager page={page} pageSize={PAGE} total={total} onPage={setPage} />
     </div>
   );
 }
