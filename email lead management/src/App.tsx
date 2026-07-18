@@ -17,20 +17,27 @@ import Brands from "./pages/Brands";
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recovery, setRecovery] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setLoading(false);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
+      if (event === "PASSWORD_RECOVERY") setRecovery(true);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
 
   if (loading) {
     return <div className="center-loading">Loading…</div>;
+  }
+
+  // Invited user (or password reset) arrived via an email link -> set a password.
+  if (recovery) {
+    return <SetPassword onDone={() => setRecovery(false)} />;
   }
 
   if (!session) {
@@ -61,6 +68,49 @@ export default function App() {
           <Route path="/hashtags" element={<Hashtags />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
+      </div>
+    </div>
+  );
+}
+
+function SetPassword({ onDone }: { onDone: () => void }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const { error } = await supabase.auth.updateUser({ password });
+    setBusy(false);
+    if (error) setError(error.message);
+    else onDone();
+  }
+
+  return (
+    <div className="login-wrap">
+      <div className="panel">
+        <h2>Passwort setzen</h2>
+        <p className="muted">Wähle ein Passwort für deinen Account.</p>
+        {error && <div className="error">{error}</div>}
+        <form onSubmit={submit}>
+          <div className="field">
+            <label>Neues Passwort</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={8}
+              autoFocus
+              style={{ width: "100%" }}
+            />
+          </div>
+          <button className="primary" type="submit" disabled={busy || password.length < 8} style={{ width: "100%" }}>
+            {busy ? "…" : "Passwort speichern & loslegen"}
+          </button>
+        </form>
       </div>
     </div>
   );
