@@ -193,16 +193,22 @@ Deno.serve(async (req) => {
           added_to_instantly_at: new Date().toISOString(),
         };
         if (targetCampaignRowId) updatePayload.campaign_id = targetCampaignRowId;
-        const { data: updatedRows, error: updErr } = await db
-          .from("creators")
-          .update(updatePayload)
-          .in("id", ids)
-          .select("id");
+        // Chunk the update: .in("id", [all ids]) puts every id in the URL, so a large
+        // batch overflows the URL length limit -> 400 Bad Request. 100 ids/request is safe.
+        let updErr: { message: string } | null = null;
+        for (let i = 0; i < ids.length; i += 100) {
+          const { data: r, error } = await db
+            .from("creators")
+            .update(updatePayload)
+            .in("id", ids.slice(i, i + 100))
+            .select("id");
+          if (error) { updErr = error; break; }
+          updated += r?.length ?? 0;
+        }
         if (updErr) {
           errMsg = `Pushed to Instantly but DB update failed: ${updErr.message}`;
           ok = false;
         } else {
-          updated = updatedRows?.length ?? 0;
           totalPushed += updated;
           // Record send history so recycling knows which campaigns a creator
           // has received (one row per creator↔campaign; re-sends refresh sent_at).
