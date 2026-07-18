@@ -295,6 +295,90 @@ def categorize(post_field_list: list):
     return primary, secondary, round(ranked[0][1] / total, 2)
 
 
+# Brands -> niche. A creator a brand chose to work with (reposted them, or they tag
+# it as #anzeige) is a strong category vote. Substring-matched against brand handles,
+# so "barebellsgermany" hits "barebells". Extend freely.
+BRAND_CATEGORY = {
+    # fitness / nutrition
+    "barebells": "fitness", "gymshark": "fitness", "myprotein": "fitness", "esnofficial": "fitness",
+    "foodspring": "fitness", "smilodox": "fitness", "prozis": "fitness", "weider": "fitness",
+    # wellness / supplements
+    "noritual": "wellness", "yfood": "wellness", "ahead": "wellness", "sunday natural": "wellness",
+    # beauty / skincare
+    "douglas": "beauty", "sephora": "beauty", "rossmann": "beauty", "dm": "beauty",
+    "loreal": "beauty", "maybelline": "beauty", "catrice": "beauty", "essence": "beauty",
+    "rhode": "skincare", "cerave": "skincare", "paulaschoice": "skincare", "yepoda": "skincare",
+    "caiacosmetics": "beauty", "kessberlin": "beauty", "luamaya": "beauty",
+    # fashion
+    "zara": "fashion", "nakdfashion": "fashion", "aboutyou": "fashion", "hm": "fashion",
+    "shein": "fashion", "edited": "fashion", "mango": "fashion", "ginatricot": "fashion",
+    "organicbasics": "fashion", "purelei": "fashion", "nakd": "fashion",
+    # food
+    "koro": "food", "hellofresh": "food", "kochhaus": "food", "purish": "food",
+}
+
+
+def _hashtag_category(tag: str):
+    tag = tag.lower().strip()
+    for cat, stems in CATEGORY_SIGNALS.items():
+        if any(s in tag for s in stems):
+            return cat
+    return None
+
+
+def _brand_category(handle: str):
+    h = re.sub(r"[^a-z0-9]", "", (handle or "").lower().lstrip("@"))
+    if not h:
+        return None
+    for brand, cat in BRAND_CATEGORY.items():
+        b = re.sub(r"[^a-z0-9]", "", brand)
+        if b and b in h:
+            return cat
+    return None
+
+
+def categorize_rich(post_field_list: list, bio: str | None = None, brands=None):
+    """Signal-rich categorization: hashtags + caption text + bio + brand collaborations,
+    each weighted by how much it says about a creator's niche. Free (no API/LLM). Returns
+    (primary, secondary, confidence, 'rich'). Falls back to (None, None, 0.0, 'rich')."""
+    score = Counter()
+
+    # hashtags — the cleanest signal (weight 2)
+    for p in post_field_list:
+        for t in p.get("hashtags") or []:
+            c = _hashtag_category(t)
+            if c:
+                score[c] += 2
+
+    # caption free-text — one vote per post per category it mentions (weight 1)
+    for p in post_field_list:
+        cap = (p.get("caption") or "").lower()
+        if not cap:
+            continue
+        for cat, stems in CATEGORY_SIGNALS.items():
+            if any(s in cap for s in stems):
+                score[cat] += 1
+
+    # bio — creators often state their niche outright (weight 3)
+    if bio:
+        b = bio.lower()
+        for cat, stems in CATEGORY_SIGNALS.items():
+            if any(s in b for s in stems):
+                score[cat] += 3
+
+    # brands worked with — source_brand + sponsored @-mentions (weight 2)
+    for h in brands or []:
+        c = _brand_category(h)
+        if c:
+            score[c] += 2
+
+    total = sum(score.values())
+    if not total:
+        return None, None, 0.0, "rich"
+    ranked = score.most_common(2)
+    return ranked[0][0], (ranked[1][0] if len(ranked) > 1 else None), round(ranked[0][1] / total, 2), "rich"
+
+
 def posting_per_week(post_field_list: list):
     ts = sorted(int(p["create_time"]) for p in post_field_list if p.get("create_time"))
     if len(ts) < 2:

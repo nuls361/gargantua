@@ -75,7 +75,9 @@ def _store_and_enrich(prov, supa, job, creators, *, source_type, source_value,
                 continue
             stub = {"sec_uid": sec, "handle": c["handle"],
                     "follower_count": c.get("followers") or 0,
-                    "region_hint": region_by.get(sec), "email": c.get("email")}
+                    "region_hint": region_by.get(sec), "email": c.get("email"),
+                    "bio": c.get("bio"),
+                    "source_brand": source_value if source_type == "brand" else None}
             try:
                 _, outcome, _ = enr.enrich_from_stub(stub)
             except BudgetExceeded:
@@ -187,7 +189,7 @@ def run_sound_job(prov, supa, job, *, log=print) -> dict:
             if isinstance(fol, int) and not (ENRICH_MIN <= fol <= ENRICH_MAX):
                 continue                                   # out of the bookable tier
             stub = {"sec_uid": sec, "handle": a["handle"], "follower_count": fol,
-                    "region_hint": "dach", "email": a["email"]}
+                    "region_hint": "dach", "email": a["email"], "bio": a.get("bio")}
             try:
                 _, outcome, _ = enr.enrich_from_stub(stub)
             except BudgetExceeded:

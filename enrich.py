@@ -214,7 +214,11 @@ class Enricher:
         if not is_dach(pf, posts, country, conf, dach_ratio):
             return 0, "reject:not_dach", None
 
-        cat, cat2, cat_conf = parse.categorize(posts)
+        brands = []
+        for p in posts:
+            if parse.is_sponsored(p.get("caption")):
+                brands += p.get("mentions") or []
+        cat, cat2, cat_conf, cat_src = parse.categorize_rich(posts, bio=pf.get("bio"), brands=brands)
 
         creator = {
             "sec_uid": sec,
@@ -241,7 +245,7 @@ class Enricher:
             "category": cat,
             "category_secondary": cat2,
             "category_confidence": cat_conf,
-            "category_source": "rules" if cat else None,
+            "category_source": cat_src if cat else None,
             "sponsored_count": sum(1 for p in posts if parse.is_sponsored(p.get("caption"))),
             "qualify_status": "qualified",
             "source_channel": seed.get("source"),
@@ -322,7 +326,13 @@ class Enricher:
             if comment_de is not None and comment_de >= 0.4:
                 market = "dach"
 
-        cat, cat2, cat_conf = parse.categorize(posts)
+        # brands the creator worked with: the source brand + brands @-mentioned in
+        # sponsored posts -> a strong niche vote alongside hashtags/captions/bio.
+        brands = [stub["source_brand"]] if stub.get("source_brand") else []
+        for p in posts:
+            if parse.is_sponsored(p.get("caption")):
+                brands += p.get("mentions") or []
+        cat, cat2, cat_conf, cat_src = parse.categorize_rich(posts, bio=stub.get("bio"), brands=brands)
         cutoff = time.time() - self.since_days * 86400
         recent = [p for p in posts if p.get("create_time") and int(p["create_time"]) >= cutoff]
 
@@ -339,7 +349,7 @@ class Enricher:
             "category": cat,
             "category_secondary": cat2,
             "category_confidence": cat_conf,
-            "category_source": "rules" if cat else None,
+            "category_source": cat_src if cat else None,
             "sponsored_count": sum(1 for p in posts if parse.is_sponsored(p.get("caption"))),
             "video_count": stub.get("video_count"),
             "enrichment_status": "enriched",
