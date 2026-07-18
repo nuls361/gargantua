@@ -13,6 +13,8 @@ import Campaigns from "./pages/Campaigns";
 import Hashtags from "./pages/Hashtags";
 import Creators from "./pages/Creators";
 import Brands from "./pages/Brands";
+import Sounds from "./pages/Sounds";
+import Seeds from "./pages/Seeds";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -66,6 +68,8 @@ export default function App() {
           <Route path="/search" element={<Creators />} />
           <Route path="/brands" element={<Brands />} />
           <Route path="/hashtags" element={<Hashtags />} />
+          <Route path="/sounds" element={<Sounds />} />
+          <Route path="/seeds" element={<Seeds />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </div>
@@ -133,14 +137,14 @@ function Sidebar({ email }: { email: string }) {
       </button>
       <nav>
         <NavLink to="/dashboard">Dashboard</NavLink>
-        <div className="nav-section">Entdecken</div>
+        <div className="nav-section">Discover</div>
         <NavLink to="/search">Search</NavLink>
         <NavLink to="/brands">Brands</NavLink>
         <NavLink to="/hashtags">Hashtags</NavLink>
+        <NavLink to="/sounds">Sounds</NavLink>
+        <NavLink to="/seeds">Creator seeds</NavLink>
         <div className="nav-section">Pipeline</div>
-        <NavLink to="/lists">Listen</NavLink>
-        <NavLink to="/leads">Leads</NavLink>
-        <NavLink to="/campaigns">Kampagnen</NavLink>
+        <NavLink to="/lists">Lists</NavLink>
       </nav>
       <div className="spacer" />
       <nav className="nav-secondary">

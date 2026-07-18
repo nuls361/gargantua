@@ -36,8 +36,12 @@ const NICHES = [
   "tech", "finance", "music", "comedy", "parenting", "home & interior", "sustainability", "lifestyle",
 ];
 
-const fmt = (n: number | null) =>
-  n == null ? "—" : n >= 1000 ? `${(n / 1000).toFixed(n >= 100000 ? 0 : 1).replace(/\.0$/, "")}k` : `${n}`;
+const fmt = (n: number | null) => {
+  if (n == null) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1).replace(/\.0$/, "")}k`;
+  return `${n}`;
+};
 const niche = (s: string | null) => (s ? s.replace(/\b\w/g, (c) => c.toUpperCase()) : s);
 
 function erCell(er: number | null) {
@@ -91,8 +95,9 @@ export default function Creators() {
 
   const withFilters = useCallback(<T,>(qb: T): T => {
     let q = qb as any;
-    const qq = qDeb.trim().replace(/[,()%*]/g, "");
-    if (qq) q = q.or(`handle.ilike.%${qq}%,display_name.ilike.%${qq}%,email.ilike.%${qq}%`);
+    const qq = qDeb.trim().replace(/^@/, "").replace(/[,()%*]/g, "");
+    // In a PostgREST .or() the ilike wildcard is * (not %).
+    if (qq) q = q.or(`handle.ilike.*${qq}*,display_name.ilike.*${qq}*,email.ilike.*${qq}*`);
     if (category) q = q.eq("category", category);
     if (market) q = q.eq("market", market);
     if (emailType === "has") q = q.not("email", "is", null);

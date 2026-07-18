@@ -868,8 +868,8 @@ code {
    Long cells (email, handle) wrap; numeric columns stay on one line. */
 .table-fit { overflow-x: hidden; }
 .table-fit table { width: 100%; }
-.table-fit th,
 .table-fit td { white-space: normal; overflow-wrap: anywhere; }
+.table-fit th { white-space: nowrap; }
 .table-fit td.num,
 .table-fit .num { white-space: nowrap; }
 
