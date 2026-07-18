@@ -17,19 +17,6 @@ type Row = {
   last_seen: string | null;
 };
 
-function YieldBar({ n, found }: { n: number; found: number }) {
-  const pct = found ? Math.round((n / found) * 100) : 0;
-  const tone = pct >= 50 ? "#16794a" : pct >= 20 ? "#8a6100" : "#b83636";
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 110 }}>
-      <div style={{ flex: 1, height: 6, background: "#eef0f4", borderRadius: 999, overflow: "hidden" }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: tone, borderRadius: 999 }} />
-      </div>
-      <span className="num" style={{ fontSize: 12, color: tone, fontWeight: 600, minWidth: 32, textAlign: "right" }}>{pct}%</span>
-    </div>
-  );
-}
-
 export default function SourceManager({
   title,
   sourceType,
@@ -131,9 +118,8 @@ export default function SourceManager({
               <th>Source</th>
               <th style={{ textAlign: "center" }}>Found</th>
               <th style={{ textAlign: "center" }}>DACH</th>
-              <th>DACH yield</th>
               <th style={{ textAlign: "center" }}>UK</th>
-              <th>UK yield</th>
+              <th style={{ textAlign: "center" }}>Other</th>
               <th style={{ textAlign: "center" }}>Enriched</th>
               <th>Last</th>
               <th style={{ textAlign: "right" }}>Action</th>
@@ -141,18 +127,17 @@ export default function SourceManager({
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} className="center-loading">Loading…</td></tr>
+              <tr><td colSpan={8} className="center-loading">Loading…</td></tr>
             ) : visible.length === 0 ? (
-              <tr><td colSpan={9} className="center-loading">Nothing harvested yet — add one above.</td></tr>
+              <tr><td colSpan={8} className="center-loading">Nothing harvested yet — add one above.</td></tr>
             ) : (
               visible.map((r) => (
                 <tr key={r.source_value}>
                   <td style={{ fontWeight: 600 }}>{formatValue(r.source_value)}</td>
                   <td style={{ textAlign: "center" }} className="num">{r.creators_found}</td>
                   <td style={{ textAlign: "center" }} className="num">{r.creators_dach || "—"}</td>
-                  <td><YieldBar n={r.creators_dach} found={r.creators_found} /></td>
                   <td style={{ textAlign: "center" }} className="num">{r.creators_uk || "—"}</td>
-                  <td><YieldBar n={r.creators_uk} found={r.creators_found} /></td>
+                  <td style={{ textAlign: "center" }} className="num">{r.creators_found - r.creators_dach - r.creators_uk || "—"}</td>
                   <td style={{ textAlign: "center" }} className="num">{r.creators_enriched || "—"}</td>
                   <td className="muted" style={{ fontSize: 12 }}>{r.last_seen ? new Date(r.last_seen).toLocaleDateString("en-GB") : "—"}</td>
                   <td style={{ textAlign: "right" }}>
