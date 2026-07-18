@@ -895,3 +895,7 @@ th { font-size: 10px; }
 .action-step { padding: 11px 15px; }
 .panel { padding: 16px; }
 .sidebar nav a { padding: 7px 11px; font-size: 13px; }
+
+/* Pagination control */
+.pager { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 4px 2px; }
+.pager button { padding: 4px 10px; font-size: 12px; }

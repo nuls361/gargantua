@@ -2,11 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import {
-  PIPELINE, pipelineStage, CONTACT_STATE, contactState,
-  type Campaign, type Creator, type List, type PipelineStage, type ContactState,
+  PIPELINE, pipelineStage, CONTACT_STATE,
+  type Campaign, type Creator, type List, type PipelineStage, type ContactState, type LeadStatus,
 } from "../lib/types";
 import CreatorTable from "../components/CreatorTable";
 import ListsTable, { type ListRow } from "../components/ListsTable";
+import Pager from "../components/Pager";
+
+const CREATOR_COLS =
+  "id, handle, tiktok_username, platform, email, region_label, label, sample_creator, status, filter_reason, enriched_at, enriched_payload, campaign_id, date_added, added_to_instantly_at, list_id, source_file, email_normalized, first_contacted_at, last_contacted_at, contact_count, last_outcome, next_eligible_at, do_not_contact, campaigns(name)";
 
 export default function Lists() {
   const { id } = useParams();
@@ -56,9 +60,8 @@ function ListsOverview() {
         <div className="grow" />
       </div>
       <p className="muted">
-        Jede Liste ist ein Batch. <strong>Sourcen</strong> → <strong>anreichern</strong> (säubert +
-        filtert) → <strong>an Instantly</strong> spielen. Der Kontaktstand sorgt dafür, dass niemand
-        doppelt kontaktiert wird.
+        Jede Liste ist ein Batch. <strong>Sourcen</strong> → <strong>anreichern</strong> → <strong>an
+        Instantly</strong>. Der Kontaktstand verhindert Doppel-Kontakte.
       </p>
 
       <Link to="/lists/recycle" className="recycle-card">
@@ -79,10 +82,15 @@ function ListsOverview() {
 
 const STAGES: PipelineStage[] = ["roh", "angereichert", "ausgespielt", "aussortiert"];
 const CS_ORDER: ContactState[] = ["never", "cooldown", "contacted", "replied", "bounced", "dnc"];
+const PAGE = 50;
+
+type Stats = { total: number; status: Record<string, number>; contact: Record<string, number> };
 
 function ListDetail({ id }: { id: string }) {
   const [list, setList] = useState<List | null>(null);
   const [members, setMembers] = useState<Creator[]>([]);
+  const [stats, setStats] = useState<Stats>({ total: 0, status: {}, contact: {} });
+  const [page, setPage] = useState(0);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [sendCampaign, setSendCampaign] = useState("");
   const [loading, setLoading] = useState(true);
@@ -90,44 +98,46 @@ function ListDetail({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [{ data: l }, { data: m }] = await Promise.all([
+  const loadStats = useCallback(async () => {
+    const [{ data: l }, { data: s }] = await Promise.all([
       supabase.from("lists").select("*").eq("id", id).single(),
-      supabase
-        .from("creators")
-        .select("id, handle, tiktok_username, platform, email, region_label, label, sample_creator, status, filter_reason, enriched_at, enriched_payload, campaign_id, date_added, added_to_instantly_at, list_id, source_file, email_normalized, first_contacted_at, last_contacted_at, contact_count, last_outcome, next_eligible_at, do_not_contact, campaigns(name)")
-        .eq("list_id", id)
-        .order("date_added", { ascending: false })
-        .limit(500),
+      supabase.rpc("list_stats", { p_list_id: id }),
     ]);
     setList((l as List) ?? null);
-    setMembers((m ?? []) as unknown as Creator[]);
-    setLoading(false);
+    setStats((s as Stats) ?? { total: 0, status: {}, contact: {} });
   }, [id]);
 
-  useEffect(() => { void load(); }, [load]);
+  const loadPage = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from("creators")
+      .select(CREATOR_COLS)
+      .eq("list_id", id)
+      .order("date_added", { ascending: false })
+      .range(page * PAGE, page * PAGE + PAGE - 1);
+    setMembers((data ?? []) as unknown as Creator[]);
+    setLoading(false);
+  }, [id, page]);
 
+  useEffect(() => { void loadStats(); }, [loadStats]);
+  useEffect(() => { void loadPage(); }, [loadPage]);
   useEffect(() => {
     supabase.from("campaigns").select("*").order("name")
       .then(({ data }) => setCampaigns((data ?? []) as Campaign[]));
   }, []);
 
+  const refresh = useCallback(async () => {
+    await Promise.all([loadStats(), loadPage()]);
+  }, [loadStats, loadPage]);
+
   const stage = useMemo(() => {
     const c: Record<PipelineStage, number> = { roh: 0, angereichert: 0, ausgespielt: 0, aussortiert: 0 };
-    for (const m of members) c[pipelineStage(m.status)]++;
+    for (const [st, n] of Object.entries(stats.status)) c[pipelineStage(st as LeadStatus)] += n;
     return c;
-  }, [members]);
+  }, [stats]);
 
-  const contact = useMemo(() => {
-    const c = {} as Record<ContactState, number>;
-    for (const m of members) { const s = contactState(m); c[s] = (c[s] ?? 0) + 1; }
-    return c;
-  }, [members]);
-
-  // legacy-status counts still drive the enrich/send gates
-  const sourced = members.filter((m) => m.status === "sourced").length;
-  const enriched = members.filter((m) => m.status === "enriched").length;
+  const sourced = stats.status.sourced ?? 0;
+  const enriched = stats.status.enriched ?? 0;
 
   function flash(msg: string) {
     setNotice(msg);
@@ -136,21 +146,20 @@ function ListDetail({ id }: { id: string }) {
   }
 
   async function enrich() {
-    if (!window.confirm("Alle rohen Creator dieser Liste anreichern? Zieht volle Profile, säubert Emails, verschiebt Aussortierte in die Filtered-Liste.")) return;
+    if (!window.confirm("Alle rohen Creator dieser Liste anreichern? Zieht Profile, säubert Emails, verschiebt Aussortierte.")) return;
     setWorking(true);
     setError(null);
     const { data, error: err } = await supabase.functions.invoke("enrich-list", { body: { list_id: id } });
     setWorking(false);
     if (err) { setError(`Anreichern fehlgeschlagen: ${err.message}`); return; }
-    const reasons = data?.reasons ? Object.entries(data.reasons).map(([k, v]) => `${v} ${k}`).join(", ") : "";
-    flash(`${data?.enriched ?? 0} angereichert, ${data?.filtered ?? 0} aussortiert${reasons ? ` (${reasons})` : ""}.`);
-    await load();
+    flash(`${data?.enriched ?? 0} angereichert, ${data?.filtered ?? 0} aussortiert.`);
+    await refresh();
   }
 
   async function send() {
     const camp = campaigns.find((c) => c.id === sendCampaign);
     if (!camp?.instantly_campaign_id) { setError("Wähle eine Kampagne mit Instantly-Campaign-ID."); return; }
-    if (!window.confirm(`Alle angereicherten Creator aus „${list?.name}" an Instantly-Kampagne „${camp.name}" senden?`)) return;
+    if (!window.confirm(`Alle ${enriched} angereicherten Creator aus „${list?.name}" an „${camp.name}" senden?`)) return;
     setWorking(true);
     setError(null);
     const { data, error: err } = await supabase.functions.invoke("push-to-instantly", {
@@ -161,11 +170,10 @@ function ListDetail({ id }: { id: string }) {
     const failed = (data?.summaries ?? []).filter((s: { ok: boolean }) => !s.ok);
     if (failed.length > 0) setError(`${data?.total_pushed ?? 0} gesendet, aber Teile scheiterten: ` + failed.map((x: { error?: string }) => x.error).join("; "));
     else flash(`${data?.total_pushed ?? 0} Creator an Instantly gesendet.`);
-    await load();
+    await refresh();
   }
 
-  if (loading) return <div className="center-loading">Loading…</div>;
-  if (!list) return <div className="error">Liste nicht gefunden.</div>;
+  if (!list) return <div className="center-loading">Loading…</div>;
 
   const isWorking = list.kind === "working";
   const activeStage: PipelineStage = stage.roh > 0 ? "roh" : stage.angereichert > 0 ? "angereichert" : "ausgespielt";
@@ -176,33 +184,30 @@ function ListDetail({ id }: { id: string }) {
         <Link to="/lists" className="ws-back">← Listen</Link>
         <h2>{list.name}</h2>
         <span className="pill pill-neutral">{list.kind}</span>
-        <span className="muted" style={{ fontSize: 13 }}>{members.length} Creator</span>
+        <span className="muted" style={{ fontSize: 13 }}>{stats.total.toLocaleString("de-DE")} Creator</span>
       </div>
 
       {error && <div className="error">{error}</div>}
       {notice && <div className="success">{notice}</div>}
 
-      {/* Axis 1 — pipeline funnel */}
       <div className="funnel">
         {STAGES.map((st, i) => (
           <div key={st} className={`funnel-step ${st === activeStage ? "active" : ""} ${PIPELINE[st].cls}`}>
-            <div className="funnel-n">{stage[st]}</div>
+            <div className="funnel-n">{stage[st].toLocaleString("de-DE")}</div>
             <div className="funnel-l">{PIPELINE[st].label}</div>
             {i < STAGES.length - 1 && <span className="funnel-arrow">→</span>}
           </div>
         ))}
       </div>
 
-      {/* Axis 2 — contact-state at a glance */}
       <div className="cs-strip">
-        {CS_ORDER.filter((s) => (contact[s] ?? 0) > 0).map((s) => (
+        {CS_ORDER.filter((s) => (stats.contact[s] ?? 0) > 0).map((s) => (
           <span key={s} className={`pill ${CONTACT_STATE[s].cls}`} style={{ textTransform: "none" }}>
-            {CONTACT_STATE[s].emoji} {CONTACT_STATE[s].label} · {contact[s]}
+            {CONTACT_STATE[s].emoji} {CONTACT_STATE[s].label} · {stats.contact[s].toLocaleString("de-DE")}
           </span>
         ))}
       </div>
 
-      {/* the one clear next action */}
       {isWorking && (
         <div className="action-card">
           <div className="action-step">
@@ -212,7 +217,7 @@ function ListDetail({ id }: { id: string }) {
               <div className="action-sub">Emails säubern & Profile ziehen</div>
             </div>
             <button className={sourced > 0 ? "primary" : ""} onClick={enrich} disabled={working || sourced === 0}>
-              {working ? "Läuft…" : sourced > 0 ? `▶ ${sourced} anreichern` : "Nichts Rohes"}
+              {working ? "Läuft…" : sourced > 0 ? `▶ ${sourced.toLocaleString("de-DE")} anreichern` : "Nichts Rohes"}
             </button>
           </div>
           <div className="action-divider" />
@@ -229,16 +234,14 @@ function ListDetail({ id }: { id: string }) {
               ))}
             </select>
             <button className={enriched > 0 && sendCampaign ? "primary" : ""} onClick={send} disabled={working || !sendCampaign || enriched === 0}>
-              {enriched > 0 ? `▶ ${enriched} senden` : "Nichts Bereites"}
+              {enriched > 0 ? `▶ ${enriched.toLocaleString("de-DE")} senden` : "Nichts Bereites"}
             </button>
           </div>
         </div>
       )}
 
-      <CreatorTable creators={members} emptyText="Keine Mitglieder." />
-      {members.length >= 500 && (
-        <p className="muted" style={{ fontSize: 12 }}>Zeige die neuesten 500 Mitglieder.</p>
-      )}
+      <CreatorTable creators={members} loading={loading} searchable={false} emptyText="Keine Mitglieder." />
+      <Pager page={page} pageSize={PAGE} total={stats.total} onPage={setPage} />
     </div>
   );
 }
