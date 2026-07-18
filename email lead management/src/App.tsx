@@ -12,6 +12,7 @@ import Leads from "./pages/Leads";
 import Campaigns from "./pages/Campaigns";
 import Hashtags from "./pages/Hashtags";
 import Creators from "./pages/Creators";
+import Brands from "./pages/Brands";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -56,6 +57,7 @@ export default function App() {
           <Route path="/campaigns" element={<Campaigns />} />
           <Route path="/campaigns/:id" element={<Campaigns />} />
           <Route path="/search" element={<Creators />} />
+          <Route path="/brands" element={<Brands />} />
           <Route path="/hashtags" element={<Hashtags />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
@@ -82,6 +84,7 @@ function Sidebar({ email }: { email: string }) {
       <nav>
         <NavLink to="/dashboard">Dashboard</NavLink>
         <NavLink to="/search">Search</NavLink>
+        <NavLink to="/brands">Brands</NavLink>
         <NavLink to="/lists">Lists</NavLink>
         <NavLink to="/leads">Leads</NavLink>
         <NavLink to="/campaigns">Campaigns</NavLink>
