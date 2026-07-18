@@ -8,7 +8,7 @@ import type { Creator } from "../lib/types";
 const DAY_OPTIONS = [7, 14, 30, 60, 90];
 
 const CREATOR_SELECT =
-  "id, handle, tiktok_username, platform, email, region_label, label, sample_creator, status, filter_reason, enriched_at, enriched_payload, campaign_id, date_added, added_to_instantly_at";
+  "id, handle, tiktok_username, platform, email, region_label, label, sample_creator, status, filter_reason, enriched_at, enriched_payload, campaign_id, date_added, added_to_instantly_at, first_contacted_at, last_contacted_at, contact_count, last_outcome, next_eligible_at, do_not_contact";
 
 export default function RecycleList() {
   const [days, setDays] = useState(30);

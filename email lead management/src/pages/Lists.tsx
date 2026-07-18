@@ -96,7 +96,7 @@ function ListDetail({ id }: { id: string }) {
       supabase.from("lists").select("*").eq("id", id).single(),
       supabase
         .from("creators")
-        .select("id, handle, tiktok_username, platform, email, region_label, label, sample_creator, status, filter_reason, enriched_at, enriched_payload, campaign_id, date_added, added_to_instantly_at, list_id, source_file, email_normalized, campaigns(name)")
+        .select("id, handle, tiktok_username, platform, email, region_label, label, sample_creator, status, filter_reason, enriched_at, enriched_payload, campaign_id, date_added, added_to_instantly_at, list_id, source_file, email_normalized, first_contacted_at, last_contacted_at, contact_count, last_outcome, next_eligible_at, do_not_contact, campaigns(name)")
         .eq("list_id", id)
         .order("date_added", { ascending: false })
         .limit(500),

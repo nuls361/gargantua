@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { supabase } from "../lib/supabase";
-import { STATUS_LABELS, type Creator } from "../lib/types";
+import { useMemo, useState } from "react";
+import { STATUS_LABELS, CONTACT_STATE, contactState, type Creator } from "../lib/types";
 
 // Link to a creator's profile on their platform.
 export function profileUrl(platform: string | null, handle: string): string {
@@ -25,13 +24,25 @@ export function creatorLocation(payload: unknown): string | null {
   return p?.creator?.primary_market ?? null;
 }
 
-const dash = <span className="muted">—</span>;
-
-interface Aggregate {
-  count: number; // distinct campaigns received
-  names: string[]; // campaign names
-  daysIdle: number | null; // days since last send
+// Contact-state pill — the axis-2 signal, shown on every lead everywhere.
+export function ContactPill({ c }: { c: Creator }) {
+  const st = contactState(c);
+  const m = CONTACT_STATE[st];
+  const when = c.last_contacted_at
+    ? `zuletzt ${new Date(c.last_contacted_at).toLocaleDateString("de-DE")}`
+    : "noch nie kontaktiert";
+  const free =
+    st === "cooldown" && c.next_eligible_at
+      ? ` · frei ab ${new Date(c.next_eligible_at).toLocaleDateString("de-DE")}`
+      : "";
+  return (
+    <span className={`pill ${m.cls}`} title={`${m.label} — ${when}${free}`}>
+      {m.emoji} {m.label}
+    </span>
+  );
 }
+
+const dash = <span className="muted">—</span>;
 
 interface Props {
   creators: Creator[];
@@ -46,8 +57,8 @@ interface Props {
 }
 
 // The single lead table used everywhere (lists, leads, campaigns, recycle).
-// It self-enriches each creator with campaign history: how many campaigns they
-// received and how many days since the last send ("idle").
+// Contact-state + contact count come straight off the (denormalized) creator row,
+// so the table no longer fans out a per-load query into campaign_sends.
 export default function CreatorTable({
   creators,
   emptyText = "No creators.",
@@ -60,67 +71,7 @@ export default function CreatorTable({
   onToggleAll,
 }: Props) {
   const [query, setQuery] = useState("");
-  const [agg, setAgg] = useState<Map<string, Aggregate>>(new Map());
   const colSpan = selectable ? 11 : 10;
-
-  const idsKey = useMemo(
-    () => creators.map((c) => c.id).sort().join(","),
-    [creators]
-  );
-
-  // Fetch campaign-send history for the visible creators and aggregate it.
-  useEffect(() => {
-    const ids = idsKey ? idsKey.split(",") : [];
-    if (ids.length === 0) {
-      setAgg(new Map());
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      const chunks: string[][] = [];
-      for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200));
-      const rows = (
-        await Promise.all(
-          chunks.map((chunk) =>
-            supabase
-              .from("campaign_sends")
-              .select("creator_id, campaign_id, sent_at, campaigns(name)")
-              .in("creator_id", chunk)
-              .then((r) => r.data ?? [])
-          )
-        )
-      ).flat() as unknown as {
-        creator_id: string;
-        campaign_id: string | null;
-        sent_at: string;
-        campaigns: { name: string } | { name: string }[] | null;
-      }[];
-
-      const map = new Map<string, { campaignIds: Set<string>; names: Set<string>; last: number }>();
-      for (const r of rows) {
-        const e = map.get(r.creator_id) ?? { campaignIds: new Set(), names: new Set(), last: 0 };
-        if (r.campaign_id) e.campaignIds.add(r.campaign_id);
-        const camp = Array.isArray(r.campaigns) ? r.campaigns[0] : r.campaigns;
-        if (camp?.name) e.names.add(camp.name);
-        const t = new Date(r.sent_at).getTime();
-        if (t > e.last) e.last = t;
-        map.set(r.creator_id, e);
-      }
-      const now = Date.now();
-      const out = new Map<string, Aggregate>();
-      for (const [id, e] of map) {
-        out.set(id, {
-          count: e.campaignIds.size,
-          names: [...e.names],
-          daysIdle: e.last ? Math.floor((now - e.last) / 86_400_000) : null,
-        });
-      }
-      if (!cancelled) setAgg(out);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [idsKey]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -136,14 +87,18 @@ export default function CreatorTable({
         creatorLocation(m.enriched_payload),
         STATUS_LABELS[m.status],
         m.filter_reason,
-        ...(agg.get(m.id)?.names ?? []),
       ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [creators, query, agg]);
+  }, [creators, query]);
+
+  const idle = (c: Creator) =>
+    c.last_contacted_at
+      ? `${Math.floor((Date.now() - new Date(c.last_contacted_at).getTime()) / 86_400_000)}d`
+      : "—";
 
   return (
     <>
@@ -181,9 +136,9 @@ export default function CreatorTable({
               <th>Email</th>
               <th>Location</th>
               <th>Label</th>
-              <th>Sample creator</th>
-              <th>Status</th>
-              <th style={{ textAlign: "center" }}>Campaigns</th>
+              <th>Pipeline</th>
+              <th>Kontakt</th>
+              <th style={{ textAlign: "center" }}>×</th>
               <th>Idle</th>
               <th>Filter reason</th>
               <th>Enriched</th>
@@ -203,7 +158,6 @@ export default function CreatorTable({
             ) : (
               filtered.map((m) => {
                 const handle = m.handle || m.tiktok_username;
-                const a = agg.get(m.id);
                 return (
                   <tr key={m.id}>
                     {selectable && (
@@ -229,31 +183,13 @@ export default function CreatorTable({
                     </td>
                     <td>{m.label || dash}</td>
                     <td>
-                      {m.sample_creator ? (
-                        <a
-                          href={profileUrl(m.platform, m.sample_creator)}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {m.sample_creator.startsWith("@") ? m.sample_creator : `@${m.sample_creator}`}
-                        </a>
-                      ) : dash}
-                    </td>
-                    <td>
                       <span className={`pill pill-${m.status}`}>{STATUS_LABELS[m.status]}</span>
                     </td>
-                    <td style={{ textAlign: "center" }}>
-                      {a && a.count > 0 ? (
-                        <span
-                          className="pill pill-in_instantly"
-                          title={a.names.join(", ")}
-                          style={{ cursor: a.names.length ? "help" : "default" }}
-                        >
-                          {a.count}
-                        </span>
-                      ) : dash}
+                    <td><ContactPill c={m} /></td>
+                    <td style={{ textAlign: "center" }} className="num">
+                      {m.contact_count > 0 ? m.contact_count : dash}
                     </td>
-                    <td className="muted">{a?.daysIdle != null ? `${a.daysIdle}d` : "—"}</td>
+                    <td className="muted">{idle(m)}</td>
                     <td className="muted">
                       {m.filter_reason
                         ? FILTER_REASON_LABELS[m.filter_reason] ?? m.filter_reason

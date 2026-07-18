@@ -454,6 +454,24 @@ tbody tr:last-child td {
   background: #eef0f4;
   color: #4a5464;
 }
+/* Contact-state pills (axis 2). Emoji carries the signal; the soft bg reinforces it.
+   text-transform:none so the German labels render exactly. */
+.pill.cs-never,
+.pill.cs-cooldown,
+.pill.cs-contacted,
+.pill.cs-replied,
+.pill.cs-bounced,
+.pill.cs-dnc {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.pill.cs-never    { background: #eef1f4; color: #5b6472; }
+.pill.cs-cooldown { background: #eef0f6; color: #767d90; }
+.pill.cs-contacted{ background: #fff3d6; color: #8a6100; }
+.pill.cs-replied  { background: #d9f5e3; color: #16794a; }
+.pill.cs-bounced  { background: #fbe0e0; color: #b83636; }
+.pill.cs-dnc      { background: #ece7fb; color: #6d3fce; }
+
 /* Pills that carry a number stay legible and aligned */
 .pill.num,
 td.num {

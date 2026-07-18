@@ -176,7 +176,7 @@ function CampaignDetail({ id }: { id: string }) {
         supabase
           .from("creators")
           .select(
-            "id, handle, tiktok_username, platform, email, region_label, label, sample_creator, status, filter_reason, enriched_at, enriched_payload, campaign_id, date_added, added_to_instantly_at, campaigns(name)",
+            "id, handle, tiktok_username, platform, email, region_label, label, sample_creator, status, filter_reason, enriched_at, enriched_payload, campaign_id, date_added, added_to_instantly_at, first_contacted_at, last_contacted_at, contact_count, last_outcome, next_eligible_at, do_not_contact, campaigns(name)",
             { count: "exact" }
           )
           .eq("campaign_id", id)

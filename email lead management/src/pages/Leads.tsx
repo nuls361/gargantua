@@ -37,7 +37,7 @@ export default function Leads() {
     let q = supabase
       .from("creators")
       .select(
-        "id, email, email_normalized, tiktok_username, handle, platform, region_label, label, sample_creator, source_file, status, filter_reason, enriched_at, enriched_payload, campaign_id, date_added, added_to_instantly_at, campaigns(name)"
+        "id, email, email_normalized, tiktok_username, handle, platform, region_label, label, sample_creator, source_file, status, filter_reason, enriched_at, enriched_payload, campaign_id, date_added, added_to_instantly_at, first_contacted_at, last_contacted_at, contact_count, last_outcome, next_eligible_at, do_not_contact, campaigns(name)"
       )
       .order("date_added", { ascending: false })
       .limit(PAGE_SIZE);

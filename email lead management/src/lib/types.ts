@@ -75,6 +75,42 @@ export interface Creator {
   date_added: string;
   added_to_instantly_at: string | null;
   campaigns?: { name: string } | null;
+  // Axis 2 — contact-state (denormalized from campaign_sends + webhook outcomes)
+  first_contacted_at: string | null;
+  last_contacted_at: string | null;
+  contact_count: number;
+  last_outcome: string | null; // sent | replied | bounced | unsubscribed | null
+  next_eligible_at: string | null;
+  do_not_contact: boolean;
+}
+
+// ---- Axis 2: contact-state -------------------------------------------------
+// The one thing every view shows at a glance: have we talked to this person, and
+// may we talk to them now? Mirrors the SQL contact_state() function 1:1.
+export type ContactState =
+  | "never" | "cooldown" | "contacted" | "replied" | "bounced" | "dnc";
+
+export const CONTACT_STATE: Record<ContactState, { label: string; emoji: string; cls: string }> = {
+  never:     { label: "Nie",        emoji: "🟢", cls: "cs-never" },
+  cooldown:  { label: "Sperrfrist", emoji: "⏳", cls: "cs-cooldown" },
+  contacted: { label: "Wieder frei",emoji: "🟡", cls: "cs-contacted" },
+  replied:   { label: "Antwort",    emoji: "✅", cls: "cs-replied" },
+  bounced:   { label: "Bounced",    emoji: "❌", cls: "cs-bounced" },
+  dnc:       { label: "DNC",        emoji: "⛔", cls: "cs-dnc" },
+};
+
+export function contactState(c: {
+  last_outcome?: string | null;
+  do_not_contact?: boolean | null;
+  next_eligible_at?: string | null;
+  contact_count?: number | null;
+}): ContactState {
+  if (c.do_not_contact || c.last_outcome === "unsubscribed") return "dnc";
+  if (c.last_outcome === "bounced") return "bounced";
+  if (c.last_outcome === "replied") return "replied";
+  if (!c.contact_count) return "never";
+  if (c.next_eligible_at && new Date(c.next_eligible_at).getTime() > Date.now()) return "cooldown";
+  return "contacted";
 }
 
 export const STATUS_LABELS: Record<LeadStatus, string> = {
