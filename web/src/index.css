@@ -872,3 +872,26 @@ code {
 .table-fit td { white-space: normal; overflow-wrap: anywhere; }
 .table-fit td.num,
 .table-fit .num { white-space: nowrap; }
+
+/* ============================================================
+   Compact UI-kit — smaller, tighter controls throughout
+   ============================================================ */
+button { padding: 6px 11px; font-size: 12.5px; border-radius: 7px; }
+input[type="text"], input[type="email"], input[type="password"],
+input[type="search"], textarea, select {
+  padding: 6px 9px; font-size: 12.5px; border-radius: 7px;
+}
+.toolbar { gap: 8px; margin-bottom: 12px; }
+.pill { padding: 2px 8px; font-size: 10px; }
+table { font-size: 12.5px; }
+th, td { padding: 8px 12px; }
+th { font-size: 10px; }
+.content { padding: 24px 28px; }
+.content h2 { font-size: 19px; }
+.ws-head h2 { font-size: 18px; }
+.funnel { gap: 18px; }
+.funnel-n { font-size: 20px; }
+.funnel-step { padding: 10px 14px; }
+.action-step { padding: 11px 15px; }
+.panel { padding: 16px; }
+.sidebar nav a { padding: 7px 11px; font-size: 13px; }
