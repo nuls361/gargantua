@@ -314,7 +314,14 @@ class Enricher:
 
         country, conf = parse.country_from_regions(posts)
         dach_ratio = parse.dach_language_ratio(posts)
-        market = "dach" if is_dach({}, posts, country, conf, dach_ratio) else "other"
+        # market is a real dimension: dach | uk | other. UK = GB upload region (English
+        # alone is not a country signal), so it leans on the per-post region, not language.
+        if is_dach({}, posts, country, conf, dach_ratio):
+            market = "dach"
+        elif country in ("GB", "UK"):
+            market = "uk"
+        else:
+            market = "other"
 
         # Borderline rescue: a creator whose CAPTIONS aren't clearly German but who has
         # a DACH hint (some German posts, or DACH upload region) -- verify via AUDIENCE

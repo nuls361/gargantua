@@ -16,12 +16,13 @@ type Brand = {
   notes: string | null;
   creators_found: number;
   creators_dach: number;
+  creators_uk: number;
   creators_email: number;
   creators_enriched: number;
   last_seen: string | null;
 };
 
-type SortKey = "creators_dach" | "creators_found" | "creators_enriched";
+type SortKey = "creators_dach" | "creators_uk" | "creators_found" | "creators_enriched";
 
 const STATUS_PILL: Record<Brand["status"], { cls: string; label: string }> = {
   candidate: { cls: "pill-neutral", label: "Kandidat" },
@@ -31,8 +32,8 @@ const STATUS_PILL: Record<Brand["status"], { cls: string; label: string }> = {
   rejected: { cls: "pill-bad", label: "Raus" },
 };
 
-function YieldBar({ dach, found }: { dach: number; found: number }) {
-  const pct = found ? Math.round((dach / found) * 100) : 0;
+function YieldBar({ n, found }: { n: number; found: number }) {
+  const pct = found ? Math.round((n / found) * 100) : 0;
   const tone = pct >= 50 ? "#16794a" : pct >= 20 ? "#8a6100" : "#b83636";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 120 }}>
@@ -175,6 +176,7 @@ export default function Brands() {
         </select>
         <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)}>
           <option value="creators_dach">Sortieren: DACH-Creator</option>
+          <option value="creators_uk">Sortieren: UK-Creator</option>
           <option value="creators_found">Sortieren: Gefunden</option>
           <option value="creators_enriched">Sortieren: Enriched</option>
         </select>
@@ -192,6 +194,8 @@ export default function Brands() {
               <th style={{ textAlign: "center" }}>Gefunden</th>
               <th style={{ textAlign: "center" }}>DACH</th>
               <th>DACH-Yield</th>
+              <th style={{ textAlign: "center" }}>UK</th>
+              <th>UK-Yield</th>
               <th style={{ textAlign: "center" }}>Enriched</th>
               <th>Zuletzt</th>
               <th style={{ textAlign: "right" }}>Aktion</th>
@@ -199,9 +203,9 @@ export default function Brands() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="center-loading">Loading…</td></tr>
+              <tr><td colSpan={10} className="center-loading">Loading…</td></tr>
             ) : visible.length === 0 ? (
-              <tr><td colSpan={8} className="center-loading">Keine Brands für diesen Filter.</td></tr>
+              <tr><td colSpan={10} className="center-loading">Keine Brands für diesen Filter.</td></tr>
             ) : (
               visible.map((b) => (
                 <tr key={b.id}>
@@ -223,7 +227,9 @@ export default function Brands() {
                   </td>
                   <td style={{ textAlign: "center" }} className="num">{b.creators_found || "—"}</td>
                   <td style={{ textAlign: "center" }} className="num">{b.creators_dach || "—"}</td>
-                  <td>{b.creators_found ? <YieldBar dach={b.creators_dach} found={b.creators_found} /> : <span className="muted">—</span>}</td>
+                  <td>{b.creators_found ? <YieldBar n={b.creators_dach} found={b.creators_found} /> : <span className="muted">—</span>}</td>
+                  <td style={{ textAlign: "center" }} className="num">{b.creators_uk || "—"}</td>
+                  <td>{b.creators_found ? <YieldBar n={b.creators_uk} found={b.creators_found} /> : <span className="muted">—</span>}</td>
                   <td style={{ textAlign: "center" }} className="num">{b.creators_enriched || "—"}</td>
                   <td className="muted" style={{ fontSize: 12 }}>
                     {b.last_seen ? new Date(b.last_seen).toLocaleDateString("de-DE") : "—"}
