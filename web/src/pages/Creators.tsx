@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import Pager from "../components/Pager";
+import CreatorTable from "../components/CreatorTable";
+import type { Creator } from "../lib/types";
 
 // Search the owned creator index (tt_creators) with full criteria, then source the
 // matching creators straight into a CRM list (creators working set) — deduped against
@@ -51,7 +53,7 @@ function erCell(er: number | null) {
   return <span className="num" style={{ color, fontWeight: 600 }} title={label}>{er}%</span>;
 }
 
-export default function Creators() {
+function PoolSearch() {
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -218,10 +220,10 @@ export default function Creators() {
   return (
     <div>
       <div className="toolbar">
-        <h2 style={{ margin: 0 }}>Search</h2>
-        <span className="pill">{total.toLocaleString("de-DE")}</span>
+        <span className="muted" style={{ fontSize: 13 }}>Fresh creators from the scraper — not yet in your CRM.</span>
+        <span className="pill">{total.toLocaleString("en-GB")}</span>
         <div className="grow" />
-        <input placeholder="Handle / Name / Email…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ minWidth: 200 }} />
+        <input placeholder="Handle / name / email…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ minWidth: 200 }} />
       </div>
 
       <div className="toolbar">
@@ -362,6 +364,93 @@ export default function Creators() {
         </table>
       </div>
       <Pager page={page} pageSize={PAGE} total={total} onPage={setPage} />
+    </div>
+  );
+}
+
+// ---- Existing leads: the CRM working set (creators already in the pipeline) ----
+const CRM_COLS =
+  "id, handle, tiktok_username, platform, email, region_label, label, sample_creator, status, filter_reason, enriched_at, enriched_payload, campaign_id, date_added, added_to_instantly_at, category, source_type, source_value, first_contacted_at, last_contacted_at, contact_count, last_outcome, next_eligible_at, do_not_contact, campaigns(name)";
+
+function CrmSearch() {
+  const [rows, setRows] = useState<Creator[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [qDeb, setQDeb] = useState("");
+  const [category, setCategory] = useState("");
+  const [contact, setContact] = useState("");
+  const [idle, setIdle] = useState("");
+
+  useEffect(() => { const t = setTimeout(() => setQDeb(query), 300); return () => clearTimeout(t); }, [query]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    let q: ReturnType<typeof supabase.from>["select"] extends never ? never : any =
+      supabase.from("creators").select(CRM_COLS, { count: "exact" });
+    const qq = qDeb.trim().replace(/^@/, "").replace(/[,()%*]/g, "");
+    if (qq) q = q.or(`handle.ilike.*${qq}*,tiktok_username.ilike.*${qq}*,email.ilike.*${qq}*`);
+    if (category) q = q.eq("category", category);
+    if (contact === "contacted") q = q.gt("contact_count", 0);
+    else if (contact === "not") q = q.or("contact_count.is.null,contact_count.eq.0");
+    if (idle) q = q.lte("last_contacted_at", new Date(Date.now() - Number(idle) * 86_400_000).toISOString());
+    q = q.order("date_added", { ascending: false }).range(page * PAGE, page * PAGE + PAGE - 1);
+    const { data, count, error: err } = await q;
+    if (err) setError(err.message);
+    else { setRows((data ?? []) as unknown as Creator[]); setTotal(count ?? 0); }
+    setLoading(false);
+  }, [qDeb, category, contact, idle, page]);
+
+  useEffect(() => { setPage(0); }, [qDeb, category, contact, idle]);
+  useEffect(() => { void load(); }, [load]);
+
+  return (
+    <div>
+      <div className="toolbar">
+        <span className="muted" style={{ fontSize: 13 }}>Your existing CRM leads (imported / already in the pipeline).</span>
+        <span className="pill">{total.toLocaleString("en-GB")}</span>
+        <div className="grow" />
+        <input placeholder="Handle / email…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ minWidth: 200 }} />
+      </div>
+      <div className="toolbar">
+        <select value={category} onChange={(e) => setCategory(e.target.value)}>
+          <option value="">All niches</option>
+          {NICHES.map((c) => <option key={c} value={c}>{niche(c)}</option>)}
+        </select>
+        <select value={contact} onChange={(e) => setContact(e.target.value)}>
+          <option value="">Contacted or not</option>
+          <option value="contacted">Contacted</option>
+          <option value="not">Not contacted</option>
+        </select>
+        <select value={idle} onChange={(e) => setIdle(e.target.value)}>
+          <option value="">Any time</option>
+          <option value="30">Last contact 30+ days ago</option>
+          <option value="60">60+ days ago</option>
+          <option value="90">90+ days ago</option>
+        </select>
+      </div>
+      {error && <div className="error">{error}</div>}
+      <CreatorTable creators={rows} loading={loading} searchable={false} emptyText="No leads for this filter." />
+      <Pager page={page} pageSize={PAGE} total={total} onPage={setPage} />
+    </div>
+  );
+}
+
+export default function Search() {
+  const [mode, setMode] = useState<"new" | "existing">("new");
+  return (
+    <div>
+      <div className="toolbar" style={{ marginBottom: 4 }}>
+        <h2 style={{ margin: 0 }}>Search</h2>
+        <div className="segmented" style={{ marginLeft: 8 }}>
+          <button className={`seg ${mode === "new" ? "active" : ""}`} onClick={() => setMode("new")}>New</button>
+          <button className={`seg ${mode === "existing" ? "active" : ""}`} onClick={() => setMode("existing")}>Existing</button>
+        </div>
+      </div>
+      {mode === "new" ? <PoolSearch /> : <CrmSearch />}
     </div>
   );
 }
