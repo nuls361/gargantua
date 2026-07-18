@@ -22,12 +22,14 @@ type Row = {
   source_value: string | null;
   source_brand: string | null;
   verified: boolean | null;
+  is_songpush_user: boolean | null;
+  songpush_admin_url: string | null;
 };
 type SortKey = "follower_count" | "engagement_median" | "sponsored_count";
 type WList = { id: string; name: string };
 
 const COLS =
-  "sec_uid,handle,display_name,follower_count,engagement_median,category,sub_niche,email,email_type,sponsored_count,market,source_type,source_value,source_brand,verified";
+  "sec_uid,handle,display_name,follower_count,engagement_median,category,sub_niche,email,email_type,sponsored_count,market,source_type,source_value,source_brand,verified,is_songpush_user,songpush_admin_url";
 const PAGE = 50;
 const NICHES = [
   "skincare", "beauty", "wellness", "fitness", "fashion", "food", "travel", "gaming",
@@ -63,6 +65,7 @@ export default function Creators() {
   const [follMax, setFollMax] = useState("");
   const [bandOnly, setBandOnly] = useState(false);
   const [sourceType, setSourceType] = useState("");
+  const [songpush, setSongpush] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("follower_count");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -98,8 +101,10 @@ export default function Creators() {
     if (follMax) q = q.lte("follower_count", Number(follMax));
     if (bandOnly) q = q.gte("engagement_median", 2).lte("engagement_median", 14);
     if (sourceType) q = q.eq("source_type", sourceType);
+    if (songpush === "only") q = q.eq("is_songpush_user", true);
+    else if (songpush === "exclude") q = q.or("is_songpush_user.is.null,is_songpush_user.eq.false");
     return q as T;
-  }, [qDeb, category, market, emailType, follMin, follMax, bandOnly, sourceType]);
+  }, [qDeb, category, market, emailType, follMin, follMax, bandOnly, sourceType, songpush]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -113,7 +118,7 @@ export default function Creators() {
     setLoading(false);
   }, [withFilters, sortKey, sortDir, page]);
 
-  useEffect(() => { setPage(0); }, [qDeb, category, market, emailType, follMin, follMax, bandOnly, sourceType]);
+  useEffect(() => { setPage(0); }, [qDeb, category, market, emailType, follMin, follMax, bandOnly, sourceType, songpush]);
   useEffect(() => { void load(); }, [load]);
 
   function sortBy(k: SortKey) {
@@ -232,6 +237,11 @@ export default function Creators() {
           <option value="sound">Sound</option>
           <option value="creator">Creator</option>
         </select>
+        <select value={songpush} onChange={(e) => setSongpush(e.target.value)} title="Attio/Songpush-Abgleich">
+          <option value="">Songpush egal</option>
+          <option value="exclude">Ohne Songpush-User</option>
+          <option value="only">Nur Songpush-User</option>
+        </select>
         <select value={emailType} onChange={(e) => setEmailType(e.target.value)}>
           <option value="">Email egal</option>
           <option value="has">Hat Email</option>
@@ -323,6 +333,11 @@ export default function Creators() {
                   <td><input type="checkbox" checked={selected.has(r.sec_uid)} onChange={() => toggle(r.sec_uid)} /></td>
                   <td>
                     <a href={`https://www.tiktok.com/@${r.handle}`} target="_blank" rel="noreferrer" style={{ fontWeight: 600 }}>@{r.handle}</a>
+                    {r.is_songpush_user && (
+                      <a href={r.songpush_admin_url ?? "#"} target="_blank" rel="noreferrer"
+                        className="pill pill-good" style={{ fontSize: 9, marginLeft: 6, textTransform: "none" }}
+                        title="Ist bereits Songpush-User (Attio)">★ Songpush</a>
+                    )}
                     {r.display_name && <div className="muted" style={{ fontSize: 12 }}>{r.display_name}</div>}
                   </td>
                   <td className="num">{fmt(r.follower_count)}</td>
