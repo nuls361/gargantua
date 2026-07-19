@@ -24,9 +24,9 @@ const fmt = (n: number) =>
 function emailBadge(pct: number) {
   // green = influencer-rich, amber = mixed, red = mood-account risk
   const [cls, label] =
-    pct >= 70 ? ["pill-good", "influencer"] : pct >= 45 ? ["pill-warn", "gemischt"] : ["pill-bad", "mood-risk"];
+    pct >= 70 ? ["pill-good", "influencer"] : pct >= 45 ? ["pill-warn", "mixed"] : ["pill-bad", "mood-risk"];
   return (
-    <span className={`pill num ${cls}`} title={`${label} — ${pct}% der Creator haben eine Kontakt-Email`}>
+    <span className={`pill num ${cls}`} title={`${label} — ${pct}% of creators have a contact email`}>
       {pct}%
     </span>
   );
@@ -89,7 +89,7 @@ export default function Hashtags() {
         <h2 style={{ margin: 0 }}>Hashtags</h2>
         <div className="grow" />
         <input
-          placeholder="Hashtag suchen…"
+          placeholder="Search hashtags…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -99,21 +99,21 @@ export default function Hashtags() {
             checked={brandOnly}
             onChange={(e) => setBrandOnly(e.target.checked)}
           />
-          Nur Brand-Hashtags ({brandCount})
+          Brand hashtags only ({brandCount})
         </label>
         <select value={minCreators} onChange={(e) => setMinCreators(Number(e.target.value))}>
-          <option value={3}>≥ 3 Creator</option>
-          <option value={5}>≥ 5 Creator</option>
-          <option value={10}>≥ 10 Creator</option>
-          <option value={20}>≥ 20 Creator</option>
+          <option value={3}>≥ 3 creators</option>
+          <option value={5}>≥ 5 creators</option>
+          <option value={10}>≥ 10 creators</option>
+          <option value={20}>≥ 20 creators</option>
         </select>
       </div>
 
       <p className="muted">
-        Wie wir Creator finden. <strong>Email %</strong> = Anteil der Creator mit Kontakt-Email
-        = <strong>Influencer-Signal</strong>. Hoch (grün) = echte, buchbare Influencer; niedrig
-        (rot) = faceless Mood-/Aesthetic-Accounts, die keine Kampagnen buchen.
-        Brand-Hashtags liefern die höchste Qualität.
+        How we find creators. <strong>Email %</strong> = share of creators with a contact email
+        = <strong>influencer signal</strong>. High (green) = real, bookable influencers; low
+        (red) = faceless mood/aesthetic accounts that don't book campaigns.
+        Brand hashtags deliver the highest quality.
       </p>
 
       {error && <div className="error">{error}</div>}
@@ -124,7 +124,7 @@ export default function Hashtags() {
             <tr>
               <th>Hashtag</th>
               <th style={{ cursor: "pointer" }} onClick={() => sortBy("creators")}>
-                Creator{arrow("creators")}
+                Creators{arrow("creators")}
               </th>
               <th style={{ cursor: "pointer" }} onClick={() => sortBy("pct_email")}>
                 Email %{arrow("pct_email")}
@@ -133,7 +133,7 @@ export default function Hashtags() {
                 Ø ER{arrow("avg_er")}
               </th>
               <th style={{ cursor: "pointer" }} onClick={() => sortBy("avg_followers")}>
-                Ø Follower{arrow("avg_followers")}
+                Ø Followers{arrow("avg_followers")}
               </th>
               <th>Typ</th>
             </tr>
@@ -148,7 +148,7 @@ export default function Hashtags() {
             ) : visible.length === 0 ? (
               <tr>
                 <td colSpan={6} className="center-loading">
-                  Keine Hashtags für diesen Filter.
+                  No hashtags for this filter.
                 </td>
               </tr>
             ) : (

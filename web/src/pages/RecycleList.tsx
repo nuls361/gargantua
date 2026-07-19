@@ -78,21 +78,21 @@ export default function RecycleList() {
   return (
     <div>
       <div className="ws-head">
-        <Link to="/lists" className="ws-back">← Listen</Link>
+        <Link to="/lists" className="ws-back">← Lists</Link>
         <h2>♻️ Recycle</h2>
       </div>
 
       <p className="muted">
-        Leads, die wir schon kontaktiert haben, die <strong>nicht geantwortet/gebounced</strong> sind
-        und seit einer Weile kalt liegen — bereit für einen neuen Anlauf. Drei Segmente nach
-        Idle-Zeit. (Die 60-Tage-Sperrfrist gilt beim Senden weiterhin.)
+        Leads we've already contacted that <strong>haven't replied/bounced</strong>
+        and have gone cold for a while — ready for a fresh approach. Three segments by
+        idle time. (The 60-day cooldown still applies when sending.)
       </p>
 
       <div className="toolbar">
         <div className="segmented">
           {SEGMENTS.map((d) => (
             <button key={d} className={`seg ${days === d ? "active" : ""}`} onClick={() => setDays(d)}>
-              {d}+ Tage {counts[d] != null ? `(${counts[d].toLocaleString("de-DE")})` : ""}
+              {d}+ days {counts[d] != null ? `(${counts[d].toLocaleString("en-GB")})` : ""}
             </button>
           ))}
         </div>
@@ -101,7 +101,7 @@ export default function RecycleList() {
       </div>
 
       <CreatorTable creators={rows} loading={loading} searchable={false}
-        emptyText="Keine Creator zum Recyceln in diesem Fenster." />
+        emptyText="No creators to recycle in this window." />
       <Pager page={page} pageSize={PAGE} total={total} onPage={setPage} />
     </div>
   );

@@ -156,11 +156,11 @@ function PoolSearch() {
       let listName = workingLists.find((l) => l.id === existingListId)?.name ?? "";
       if (listMode === "new") {
         const name = newListName.trim();
-        if (!name) throw new Error("Listenname fehlt.");
+        if (!name) throw new Error("List name is required.");
         const { data, error } = await supabase.from("lists").insert({ name, kind: "working" }).select("id,name").single();
         if (error) throw error;
         listId = data.id; listName = data.name;
-      } else if (!listId) throw new Error("Wähle eine Liste.");
+      } else if (!listId) throw new Error("Choose a list.");
 
       let src: Row[];
       if (scope === "selected") {
@@ -171,7 +171,7 @@ function PoolSearch() {
         if (error) throw error;
         src = (data ?? []) as Row[];
       }
-      if (src.length === 0) throw new Error("Nichts zu sourcen.");
+      if (src.length === 0) throw new Error("Nothing to save.");
 
       // dedupe against the CRM (by handle) so we never re-add / double-contact
       const handles = [...new Set(src.map((r) => r.handle))];
@@ -203,7 +203,7 @@ function PoolSearch() {
         if (error) throw error;
         inserted += data?.length ?? 0;
       }
-      setNotice(`${inserted} Creator in „${listName}" gesourced${src.length - fresh.length > 0 ? ` · ${src.length - fresh.length} Dubletten übersprungen` : ""}. Öffne „Listen" zum Anreichern & Senden.`);
+      setNotice(`${inserted} creators saved to “${listName}”${src.length - fresh.length > 0 ? ` · ${src.length - fresh.length} duplicates skipped` : ""}. Open “Lists” to enrich & send.`);
       setSelected(new Set());
       setShowSource(false);
       supabase.from("lists").select("id,name").eq("kind", "working").order("name")
@@ -228,34 +228,34 @@ function PoolSearch() {
 
       <div className="toolbar">
         <select value={category} onChange={(e) => setCategory(e.target.value)}>
-          <option value="">Alle Niches</option>
+          <option value="">All niches</option>
           {NICHES.map((c) => <option key={c} value={c}>{niche(c)}</option>)}
         </select>
         <select value={market} onChange={(e) => setMarket(e.target.value)}>
-          <option value="">Alle Märkte</option>
+          <option value="">All markets</option>
           <option value="dach">DACH</option>
           <option value="uk">UK</option>
-          <option value="other">Andere</option>
+          <option value="other">Other</option>
         </select>
         <select value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
-          <option value="">Alle Quellen</option>
+          <option value="">All sources</option>
           <option value="brand">Brand</option>
           <option value="hashtag">Hashtag</option>
           <option value="sound">Sound</option>
           <option value="creator">Creator</option>
         </select>
-        <select value={songpush} onChange={(e) => setSongpush(e.target.value)} title="Attio/Songpush-Abgleich">
-          <option value="">Songpush egal</option>
-          <option value="exclude">Ohne Songpush-User</option>
-          <option value="only">Nur Songpush-User</option>
+        <select value={songpush} onChange={(e) => setSongpush(e.target.value)} title="Attio/Songpush match">
+          <option value="">Songpush any</option>
+          <option value="exclude">Exclude Songpush users</option>
+          <option value="only">Only Songpush users</option>
         </select>
         <select value={emailType} onChange={(e) => setEmailType(e.target.value)}>
-          <option value="">Email egal</option>
-          <option value="has">Hat Email</option>
+          <option value="">Email any</option>
+          <option value="has">Has email</option>
           <option value="freemail">Freemail</option>
           <option value="management">Management</option>
         </select>
-        <input type="number" placeholder="Follower min" value={follMin} onChange={(e) => setFollMin(e.target.value)} style={{ width: 110 }} />
+        <input type="number" placeholder="Followers min" value={follMin} onChange={(e) => setFollMin(e.target.value)} style={{ width: 110 }} />
         <input type="number" placeholder="max" value={follMax} onChange={(e) => setFollMax(e.target.value)} style={{ width: 90 }} />
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
           <input type="checkbox" checked={bandOnly} onChange={(e) => setBandOnly(e.target.checked)} />
@@ -266,10 +266,10 @@ function PoolSearch() {
       {/* sourcing bar */}
       <div className="toolbar" style={{ background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px" }}>
         <span className="muted" style={{ fontSize: 13 }}>
-          {total.toLocaleString("de-DE")} Treffer{selCount > 0 ? ` · ${selCount} ausgewählt` : ""}
+          {total.toLocaleString("en-GB")} results{selCount > 0 ? ` · ${selCount} selected` : ""}
         </span>
         <div className="grow" />
-        {selCount > 0 && <button onClick={() => setSelected(new Set())}>Auswahl leeren</button>}
+        {selCount > 0 && <button onClick={() => setSelected(new Set())}>Clear selection</button>}
         <button className="primary" onClick={() => { setScope(selCount > 0 ? "selected" : "all"); setShowSource((v) => !v); }} disabled={total === 0}>
           Save to list ▾
         </button>
@@ -279,24 +279,24 @@ function PoolSearch() {
         <div className="panel" style={{ padding: 14 }}>
           <div className="toolbar" style={{ margin: 0, marginBottom: 10 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, margin: 0 }}>
-              <input type="radio" checked={scope === "all"} onChange={() => setScope("all")} /> Alle {total.toLocaleString("de-DE")} Treffer
+              <input type="radio" checked={scope === "all"} onChange={() => setScope("all")} /> All {total.toLocaleString("en-GB")} results
             </label>
             {selCount > 0 && (
               <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, margin: 0 }}>
-                <input type="radio" checked={scope === "selected"} onChange={() => setScope("selected")} /> {selCount} ausgewählte
+                <input type="radio" checked={scope === "selected"} onChange={() => setScope("selected")} /> {selCount} selected
               </label>
             )}
           </div>
           <div className="toolbar" style={{ margin: 0 }}>
             <select value={listMode} onChange={(e) => setListMode(e.target.value as "new" | "existing")}>
-              <option value="new">Neue Liste</option>
-              <option value="existing">Bestehende Liste</option>
+              <option value="new">New list</option>
+              <option value="existing">Existing list</option>
             </select>
             {listMode === "new" ? (
-              <input placeholder="Listenname…" value={newListName} onChange={(e) => setNewListName(e.target.value)} style={{ minWidth: 200 }} />
+              <input placeholder="List name…" value={newListName} onChange={(e) => setNewListName(e.target.value)} style={{ minWidth: 200 }} />
             ) : (
               <select value={existingListId} onChange={(e) => setExistingListId(e.target.value)} style={{ minWidth: 200 }}>
-                <option value="">Liste wählen…</option>
+                <option value="">Choose a list…</option>
                 {workingLists.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             )}
@@ -305,8 +305,8 @@ function PoolSearch() {
             </button>
           </div>
           <p className="muted" style={{ fontSize: 12, margin: "10px 0 0" }}>
-            Dubletten (schon im CRM / bereits kontaktiert) werden automatisch übersprungen. Creator mit Email
-            landen als „angereichert", ohne als „roh".
+            Duplicates (already in the CRM / already contacted) are skipped automatically. Creators with an email
+            land as “enriched”, those without as “raw”.
           </p>
         </div>
       )}
@@ -318,22 +318,22 @@ function PoolSearch() {
         <table>
           <thead>
             <tr>
-              <th style={{ width: 28 }}><input type="checkbox" checked={allOnPage} onChange={toggleAll} aria-label="Seite auswählen" /></th>
+              <th style={{ width: 28 }}><input type="checkbox" checked={allOnPage} onChange={toggleAll} aria-label="Select page" /></th>
               <th>Creator</th>
-              <th style={{ cursor: "pointer" }} onClick={() => sortBy("follower_count")}>Follower{arrow("follower_count")}</th>
+              <th style={{ cursor: "pointer" }} onClick={() => sortBy("follower_count")}>Followers{arrow("follower_count")}</th>
               <th style={{ cursor: "pointer" }} onClick={() => sortBy("engagement_median")}>ER{arrow("engagement_median")}</th>
               <th>Niche</th>
-              <th>Markt</th>
+              <th>Market</th>
               <th>Email</th>
               <th style={{ cursor: "pointer" }} onClick={() => sortBy("sponsored_count")}>Ads{arrow("sponsored_count")}</th>
-              <th>Quelle</th>
+              <th>Source</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr><td colSpan={9} className="center-loading">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={9} className="center-loading">Keine Creator für diesen Filter.</td></tr>
+              <tr><td colSpan={9} className="center-loading">No creators for this filter.</td></tr>
             ) : (
               rows.map((r) => (
                 <tr key={r.sec_uid}>
@@ -343,7 +343,7 @@ function PoolSearch() {
                     {r.is_songpush_user && (
                       <a href={r.songpush_admin_url ?? "#"} target="_blank" rel="noreferrer"
                         className="pill pill-good" style={{ fontSize: 9, marginLeft: 6, textTransform: "none" }}
-                        title="Ist bereits Songpush-User (Attio)">★ Songpush</a>
+                        title="Already a Songpush user (Attio)">★ Songpush</a>
                     )}
                     {r.display_name && <div className="muted" style={{ fontSize: 12 }}>{r.display_name}</div>}
                   </td>

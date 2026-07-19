@@ -21,7 +21,7 @@ export default function Login() {
 
   async function forgot() {
     if (!email) {
-      setError("Trag zuerst deine Email ein, dann „Passwort vergessen“.");
+      setError("Enter your email first, then click “Forgot password”.");
       return;
     }
     setBusy(true);
@@ -31,13 +31,13 @@ export default function Login() {
     });
     setBusy(false);
     if (error) setError(error.message);
-    else setNotice(`Link zum Passwort-Setzen an ${email} geschickt. Auch für die erste Anmeldung nach einer Einladung.`);
+    else setNotice(`A password-setup link has been sent to ${email}. Also use it for your first sign-in after an invite.`);
   }
 
   return (
     <div className="login-wrap">
       <div className="panel">
-        <h2>Anmelden</h2>
+        <h2>Sign in</h2>
         {error && <div className="error">{error}</div>}
         {notice && <div className="success">{notice}</div>}
         <form onSubmit={submit}>
@@ -53,7 +53,7 @@ export default function Login() {
             />
           </div>
           <div className="field">
-            <label>Passwort</label>
+            <label>Password</label>
             <input
               type="password"
               value={password}
@@ -63,7 +63,7 @@ export default function Login() {
             />
           </div>
           <button className="primary" type="submit" disabled={busy} style={{ width: "100%" }}>
-            {busy ? "…" : "Anmelden"}
+            {busy ? "…" : "Sign in"}
           </button>
         </form>
         <button
@@ -71,7 +71,7 @@ export default function Login() {
           disabled={busy}
           style={{ marginTop: 12, width: "100%", background: "none", border: "none", boxShadow: "none", color: "var(--muted)", fontWeight: 500 }}
         >
-          Passwort vergessen / Einladung annehmen
+          Forgot password / accept invite
         </button>
       </div>
     </div>

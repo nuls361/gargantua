@@ -64,12 +64,12 @@ function ListsOverview() {
   return (
     <div>
       <div className="toolbar">
-        <h2 style={{ margin: 0 }}>Listen</h2>
+        <h2 style={{ margin: 0 }}>Lists</h2>
         <div className="grow" />
       </div>
       <p className="muted">
-        Jede Liste ist ein Batch. <strong>Sourcen</strong> → <strong>anreichern</strong> → <strong>an
-        Instantly</strong>. Der Kontaktstand verhindert Doppel-Kontakte.
+        Each list is a batch. <strong>Source</strong> → <strong>enrich</strong> → <strong>to
+        Instantly</strong>. The contact state prevents double-contacts.
       </p>
 
       <div className="nav-section" style={{ padding: "0 0 6px" }}>Recycle segments</div>
@@ -181,30 +181,30 @@ function ListDetail({ id }: { id: string }) {
   }
 
   async function enrich() {
-    if (!window.confirm("Alle rohen Creator dieser Liste anreichern? Zieht Profile, säubert Emails, verschiebt Aussortierte.")) return;
+    if (!window.confirm("Enrich all raw creators in this list? Pulls profiles, cleans emails, moves filtered ones out.")) return;
     setWorking(true);
     setError(null);
     const { data, error: err } = await supabase.functions.invoke("enrich-list", { body: { list_id: id } });
     setWorking(false);
-    if (err) { setError(`Anreichern fehlgeschlagen: ${err.message}`); return; }
-    flash(`${data?.enriched ?? 0} angereichert, ${data?.filtered ?? 0} aussortiert.`);
+    if (err) { setError(`Enrich failed: ${err.message}`); return; }
+    flash(`${data?.enriched ?? 0} enriched, ${data?.filtered ?? 0} filtered.`);
     await refresh();
   }
 
   async function send() {
     const camp = campaigns.find((c) => c.id === sendCampaign);
-    if (!camp?.instantly_campaign_id) { setError("Wähle eine Kampagne mit Instantly-Campaign-ID."); return; }
-    if (!window.confirm(`Alle ${enriched} angereicherten Creator aus „${list?.name}" an „${camp.name}" senden?`)) return;
+    if (!camp?.instantly_campaign_id) { setError("Choose a campaign with an Instantly campaign ID."); return; }
+    if (!window.confirm(`Send all ${enriched} enriched creators from “${list?.name}” to “${camp.name}”?`)) return;
     setWorking(true);
     setError(null);
     const { data, error: err } = await supabase.functions.invoke("push-to-instantly", {
       body: { list_id: id, instantly_campaign_id: camp.instantly_campaign_id },
     });
     setWorking(false);
-    if (err) { setError(`Senden fehlgeschlagen: ${err.message}`); return; }
+    if (err) { setError(`Send failed: ${err.message}`); return; }
     const failed = (data?.summaries ?? []).filter((s: { ok: boolean }) => !s.ok);
-    if (failed.length > 0) setError(`${data?.total_pushed ?? 0} gesendet, aber Teile scheiterten: ` + failed.map((x: { error?: string }) => x.error).join("; "));
-    else flash(`${data?.total_pushed ?? 0} Creator an Instantly gesendet.`);
+    if (failed.length > 0) setError(`${data?.total_pushed ?? 0} sent, but some parts failed: ` + failed.map((x: { error?: string }) => x.error).join("; "));
+    else flash(`${data?.total_pushed ?? 0} creators sent to Instantly.`);
     await refresh();
   }
 
@@ -216,10 +216,10 @@ function ListDetail({ id }: { id: string }) {
   return (
     <div>
       <div className="ws-head">
-        <Link to="/lists" className="ws-back">← Listen</Link>
+        <Link to="/lists" className="ws-back">← Lists</Link>
         <h2>{list.name}</h2>
         <span className="pill pill-neutral">{list.kind}</span>
-        <span className="muted" style={{ fontSize: 13 }}>{stats.total.toLocaleString("de-DE")} Creator</span>
+        <span className="muted" style={{ fontSize: 13 }}>{stats.total.toLocaleString("en-GB")} creators</span>
       </div>
 
       {error && <div className="error">{error}</div>}
@@ -228,7 +228,7 @@ function ListDetail({ id }: { id: string }) {
       <div className="funnel">
         {STAGES.map((st, i) => (
           <div key={st} className={`funnel-step ${st === activeStage ? "active" : ""} ${PIPELINE[st].cls}`}>
-            <div className="funnel-n">{stage[st].toLocaleString("de-DE")}</div>
+            <div className="funnel-n">{stage[st].toLocaleString("en-GB")}</div>
             <div className="funnel-l">{PIPELINE[st].label}</div>
             {i < STAGES.length - 1 && <span className="funnel-arrow">→</span>}
           </div>
@@ -238,7 +238,7 @@ function ListDetail({ id }: { id: string }) {
       <div className="cs-strip">
         {CS_ORDER.filter((s) => (stats.contact[s] ?? 0) > 0).map((s) => (
           <span key={s} className={`pill ${CONTACT_STATE[s].cls}`} style={{ textTransform: "none" }}>
-            {CONTACT_STATE[s].emoji} {CONTACT_STATE[s].label} · {stats.contact[s].toLocaleString("de-DE")}
+            {CONTACT_STATE[s].emoji} {CONTACT_STATE[s].label} · {stats.contact[s].toLocaleString("en-GB")}
           </span>
         ))}
       </div>
@@ -248,28 +248,28 @@ function ListDetail({ id }: { id: string }) {
           <div className="action-step">
             <div className="action-num">1</div>
             <div className="action-body">
-              <div className="action-title">Anreichern</div>
-              <div className="action-sub">Emails säubern & Profile ziehen</div>
+              <div className="action-title">Enrich</div>
+              <div className="action-sub">Clean emails & pull profiles</div>
             </div>
             <button className={sourced > 0 ? "primary" : ""} onClick={enrich} disabled={working || sourced === 0}>
-              {working ? "Läuft…" : sourced > 0 ? `▶ ${sourced.toLocaleString("de-DE")} anreichern` : "Nichts Rohes"}
+              {working ? "Working…" : sourced > 0 ? `▶ Enrich ${sourced.toLocaleString("en-GB")}` : "Nothing raw"}
             </button>
           </div>
           <div className="action-divider" />
           <div className="action-step">
             <div className="action-num">2</div>
             <div className="action-body">
-              <div className="action-title">An Instantly spielen</div>
-              <div className="action-sub">Angereicherte in eine Kampagne</div>
+              <div className="action-title">Send to Instantly</div>
+              <div className="action-sub">Enriched into a campaign</div>
             </div>
             <select value={sendCampaign} onChange={(e) => setSendCampaign(e.target.value)} style={{ minWidth: 180 }}>
-              <option value="">Kampagne wählen…</option>
+              <option value="">Choose a campaign…</option>
               {campaigns.filter((c) => c.instantly_campaign_id).map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
             <button className={enriched > 0 && sendCampaign ? "primary" : ""} onClick={send} disabled={working || !sendCampaign || enriched === 0}>
-              {enriched > 0 ? `▶ ${enriched.toLocaleString("de-DE")} senden` : "Nichts Bereites"}
+              {enriched > 0 ? `▶ Send ${enriched.toLocaleString("en-GB")}` : "Nothing ready"}
             </button>
           </div>
         </div>

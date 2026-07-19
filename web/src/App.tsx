@@ -95,12 +95,12 @@ function SetPassword({ onDone }: { onDone: () => void }) {
   return (
     <div className="login-wrap">
       <div className="panel">
-        <h2>Passwort setzen</h2>
-        <p className="muted">Wähle ein Passwort für deinen Account.</p>
+        <h2>Set password</h2>
+        <p className="muted">Choose a password for your account.</p>
         {error && <div className="error">{error}</div>}
         <form onSubmit={submit}>
           <div className="field">
-            <label>Neues Passwort</label>
+            <label>New password</label>
             <input
               type="password"
               value={password}
@@ -112,7 +112,7 @@ function SetPassword({ onDone }: { onDone: () => void }) {
             />
           </div>
           <button className="primary" type="submit" disabled={busy || password.length < 8} style={{ width: "100%" }}>
-            {busy ? "…" : "Passwort speichern & loslegen"}
+            {busy ? "…" : "Save password & get started"}
           </button>
         </form>
       </div>

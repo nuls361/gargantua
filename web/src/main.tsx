@@ -14,8 +14,8 @@ function showError(label: string, e: unknown) {
     `${label}\n\n${msg.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] as string)}</pre>`;
 }
 
-window.addEventListener("error", (ev) => showError("Runtime-Fehler:", ev.error ?? ev.message));
-window.addEventListener("unhandledrejection", (ev) => showError("Promise-Fehler:", ev.reason));
+window.addEventListener("error", (ev) => showError("Runtime error:", ev.error ?? ev.message));
+window.addEventListener("unhandledrejection", (ev) => showError("Promise error:", ev.reason));
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -23,7 +23,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { err
     return { error };
   }
   componentDidCatch(error: Error) {
-    showError("Render-Fehler:", error);
+    showError("Render error:", error);
   }
   render() {
     return this.state.error ? null : this.props.children;
@@ -41,5 +41,5 @@ try {
     </React.StrictMode>
   );
 } catch (e) {
-  showError("Start-Fehler:", e);
+  showError("Startup error:", e);
 }

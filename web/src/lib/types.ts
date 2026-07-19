@@ -91,10 +91,10 @@ export type ContactState =
   | "never" | "cooldown" | "contacted" | "replied" | "bounced" | "dnc";
 
 export const CONTACT_STATE: Record<ContactState, { label: string; emoji: string; cls: string }> = {
-  never:     { label: "Nie",        emoji: "🟢", cls: "cs-never" },
-  cooldown:  { label: "Sperrfrist", emoji: "⏳", cls: "cs-cooldown" },
-  contacted: { label: "Wieder frei",emoji: "🟡", cls: "cs-contacted" },
-  replied:   { label: "Antwort",    emoji: "✅", cls: "cs-replied" },
+  never:     { label: "Never",      emoji: "🟢", cls: "cs-never" },
+  cooldown:  { label: "Cooldown",   emoji: "⏳", cls: "cs-cooldown" },
+  contacted: { label: "Ready",      emoji: "🟡", cls: "cs-contacted" },
+  replied:   { label: "Replied",    emoji: "✅", cls: "cs-replied" },
   bounced:   { label: "Bounced",    emoji: "❌", cls: "cs-bounced" },
   dnc:       { label: "DNC",        emoji: "⛔", cls: "cs-dnc" },
 };
@@ -117,10 +117,10 @@ export function contactState(c: {
 export type PipelineStage = "roh" | "angereichert" | "ausgespielt" | "aussortiert";
 
 export const PIPELINE: Record<PipelineStage, { label: string; cls: string }> = {
-  roh:          { label: "Roh",          cls: "pl-roh" },
-  angereichert: { label: "Angereichert", cls: "pl-angereichert" },
-  ausgespielt:  { label: "Ausgespielt",  cls: "pl-ausgespielt" },
-  aussortiert:  { label: "Aussortiert",  cls: "pl-aussortiert" },
+  roh:          { label: "Raw",          cls: "pl-roh" },
+  angereichert: { label: "Enriched",     cls: "pl-angereichert" },
+  ausgespielt:  { label: "Sent",         cls: "pl-ausgespielt" },
+  aussortiert:  { label: "Filtered",     cls: "pl-aussortiert" },
 };
 
 // The pipeline axis is derived from the (legacy, overloaded) status. Contact

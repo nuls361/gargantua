@@ -29,11 +29,11 @@ export function ContactPill({ c }: { c: Creator }) {
   const st = contactState(c);
   const m = CONTACT_STATE[st];
   const when = c.last_contacted_at
-    ? `zuletzt ${new Date(c.last_contacted_at).toLocaleDateString("de-DE")}`
-    : "noch nie kontaktiert";
+    ? `last contacted ${new Date(c.last_contacted_at).toLocaleDateString("en-GB")}`
+    : "never contacted";
   const free =
     st === "cooldown" && c.next_eligible_at
-      ? ` · frei ab ${new Date(c.next_eligible_at).toLocaleDateString("de-DE")}`
+      ? ` · free from ${new Date(c.next_eligible_at).toLocaleDateString("en-GB")}`
       : "";
   return (
     <span className={`pill ${m.cls}`} title={`${m.label} — ${when}${free}`}>
@@ -137,7 +137,7 @@ export default function CreatorTable({
               <th>Location</th>
               <th>Label</th>
               <th>Pipeline</th>
-              <th>Kontakt</th>
+              <th>Contact</th>
               <th style={{ textAlign: "center" }}>×</th>
               <th>Idle</th>
               <th>Filter reason</th>
