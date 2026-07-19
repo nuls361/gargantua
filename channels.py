@@ -9,6 +9,8 @@ repost_harvest.harvest_brand (pure API); only storage is now Supabase-direct.
 from __future__ import annotations
 
 import parse
+import os
+
 from provider import ProviderError
 from repost_harvest import harvest_brand, region_from_email
 from hashtag_harvest import harvest_hashtag
@@ -20,6 +22,20 @@ DEFAULT_PAGES = 8
 JOB_BUDGET_USD = 2.00          # per-job enrich cap if the job doesn't set one
 ENRICH_MIN, ENRICH_MAX = 1000, 250_000   # the selective-enrich follower tier
 MIN_FOLLOWERS = 1000                       # quality gate: don't store creators below this
+
+
+def _attio_reconcile(supa, creators, log):
+    """Flag freshly harvested creators as Songpush users (if ATTIO_API_KEY is set).
+    Best-effort: never let an Attio hiccup fail the harvest."""
+    if not os.environ.get("ATTIO_API_KEY"):
+        return
+    try:
+        from reconcile_attio import reconcile_batch
+        n = reconcile_batch(supa, {c["sec_uid"]: c["handle"] for c in creators if c.get("handle")})
+        if n:
+            log(f"  attio: {n} already Songpush users")
+    except Exception as e:
+        log(f"  attio reconcile skipped: {str(e)[:60]}")
 
 
 def _stub_row(c: dict, source_type: str, source_value: str, source_channel: str, region_default):
@@ -64,6 +80,7 @@ def _store_and_enrich(prov, supa, job, creators, *, source_type, source_value,
         "sec_uid": c["sec_uid"], "source_type": source_type, "source_value": source_value,
         "job_id": job["id"], "requested_by": job.get("requested_by"),
     } for c in creators])
+    _attio_reconcile(supa, [c for c in creators if (c.get("followers") or 0) >= MIN_FOLLOWERS], log)
 
     candidates = [c for c in creators
                   if ENRICH_MIN <= (c.get("followers") or 0) <= ENRICH_MAX and c.get("email")
@@ -166,6 +183,7 @@ def run_sound_job(prov, supa, job, *, log=print) -> dict:
         "sec_uid": a["sec_uid"], "source_type": "sound", "source_value": source_value,
         "job_id": job["id"], "requested_by": job.get("requested_by"),
     } for a in authors])
+    _attio_reconcile(supa, [a for a in authors if is_dach_author(a)], log)
 
     # enrich the DACH candidates with an email; followers aren't inline for the sound
     # channel, so backfill via one profile call, then apply the tier gate + enrich.

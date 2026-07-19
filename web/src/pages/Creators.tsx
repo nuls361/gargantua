@@ -244,10 +244,10 @@ function PoolSearch() {
           <option value="sound">Sound</option>
           <option value="creator">Creator</option>
         </select>
-        <select value={songpush} onChange={(e) => setSongpush(e.target.value)} title="Attio/Songpush match">
-          <option value="">Songpush any</option>
-          <option value="exclude">Exclude Songpush users</option>
-          <option value="only">Only Songpush users</option>
+        <select value={songpush} onChange={(e) => setSongpush(e.target.value)} title="Attio/WePush match">
+          <option value="">WePush any</option>
+          <option value="exclude">Exclude WePush users</option>
+          <option value="only">Only WePush users</option>
         </select>
         <select value={emailType} onChange={(e) => setEmailType(e.target.value)}>
           <option value="">Email any</option>
@@ -336,14 +336,14 @@ function PoolSearch() {
               <tr><td colSpan={9} className="center-loading">No creators for this filter.</td></tr>
             ) : (
               rows.map((r) => (
-                <tr key={r.sec_uid}>
+                <tr key={r.sec_uid} className={r.is_songpush_user ? "row-wepush" : undefined}>
                   <td><input type="checkbox" checked={selected.has(r.sec_uid)} onChange={() => toggle(r.sec_uid)} /></td>
                   <td>
                     <a href={`https://www.tiktok.com/@${r.handle}`} target="_blank" rel="noreferrer" style={{ fontWeight: 600 }}>@{r.handle}</a>
                     {r.is_songpush_user && (
                       <a href={r.songpush_admin_url ?? "#"} target="_blank" rel="noreferrer"
                         className="pill pill-good" style={{ fontSize: 9, marginLeft: 6, textTransform: "none" }}
-                        title="Already a Songpush user (Attio)">★ Songpush</a>
+                        title="Already a WePush user (Attio)">★ WePush</a>
                     )}
                     {r.display_name && <div className="muted" style={{ fontSize: 12 }}>{r.display_name}</div>}
                   </td>

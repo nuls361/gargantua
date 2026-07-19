@@ -436,6 +436,23 @@ tbody tr:last-child td {
   color: #b83636;
 }
 
+/* Existing WePush user (Attio match): tint the whole row so it reads at a glance
+   that we already have a relationship — don't cold-approach these. */
+.row-wepush td {
+  background: #eefaf2;
+}
+.row-wepush:hover td {
+  background: #e2f6ea;
+}
+@media (prefers-color-scheme: dark) {
+  .row-wepush td {
+    background: rgba(34, 197, 94, 0.10);
+  }
+  .row-wepush:hover td {
+    background: rgba(34, 197, 94, 0.16);
+  }
+}
+
 /* Semantic signal pills (quality read: good / warning / bad / neutral).
    Reuse the same soft palette as the status pills so tables stay consistent. */
 .pill-good {
