@@ -27,7 +27,10 @@ function eligible<T>(qb: T, days: number): T {
 }
 
 export default function RecycleList() {
-  const [days, setDays] = useState(60);
+  const [days, setDays] = useState(() => {
+    const d = Number(new URLSearchParams(window.location.search).get("days"));
+    return SEGMENTS.includes(d) ? d : 60;
+  });
   const [rows, setRows] = useState<Creator[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);

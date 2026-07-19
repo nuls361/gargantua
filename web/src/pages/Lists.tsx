@@ -20,12 +20,20 @@ export default function Lists() {
 function ListsOverview() {
   const [rows, setRows] = useState<ListRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [recycleCount, setRecycleCount] = useState<number | null>(null);
+  const [recycle, setRecycle] = useState<Record<number, number>>({});
 
   useEffect(() => {
-    supabase
-      .rpc("recycle_count", { p_days: 30 })
-      .then(({ data }) => setRecycleCount(typeof data === "number" ? data : Number(data ?? 0)));
+    [30, 60, 90].forEach(async (d) => {
+      const cutoff = new Date(Date.now() - d * 86_400_000).toISOString();
+      const { count } = await supabase
+        .from("creators")
+        .select("id", { count: "exact", head: true })
+        .gt("contact_count", 0)
+        .eq("do_not_contact", false)
+        .or("last_outcome.is.null,last_outcome.eq.sent")
+        .lte("last_contacted_at", cutoff);
+      setRecycle((r) => ({ ...r, [d]: count ?? 0 }));
+    });
   }, []);
 
   useEffect(() => {
@@ -64,17 +72,21 @@ function ListsOverview() {
         Instantly</strong>. Der Kontaktstand verhindert Doppel-Kontakte.
       </p>
 
-      <Link to="/lists/recycle" className="recycle-card">
-        <span className="recycle-emoji">♻️</span>
-        <div>
-          <div className="recycle-title">Recycle</div>
-          <div className="recycle-sub">Leads, seit 30+ Tagen nicht gemailt — wieder frei</div>
-        </div>
-        <span className="recycle-count">
-          {recycleCount == null ? "…" : recycleCount.toLocaleString("de-DE")}
-        </span>
-      </Link>
+      <div className="nav-section" style={{ padding: "0 0 6px" }}>Recycle segments</div>
+      <div style={{ display: "flex", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
+        {[30, 60, 90].map((d) => (
+          <Link key={d} to={`/lists/recycle?days=${d}`} className="recycle-card" style={{ flex: "1 1 200px" }}>
+            <span className="recycle-emoji">♻️</span>
+            <div>
+              <div className="recycle-title">{d}+ days idle</div>
+              <div className="recycle-sub">Contacted, no reply — free to re-approach</div>
+            </div>
+            <span className="recycle-count">{recycle[d] == null ? "…" : recycle[d].toLocaleString("en-GB")}</span>
+          </Link>
+        ))}
+      </div>
 
+      <div className="nav-section" style={{ padding: "0 0 6px" }}>Lists</div>
       <ListsTable rows={rows} loading={loading} />
     </div>
   );
