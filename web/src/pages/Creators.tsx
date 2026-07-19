@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import Pager from "../components/Pager";
-import CreatorTable from "../components/CreatorTable";
-import type { Creator } from "../lib/types";
 
-// Search the owned creator index (tt_creators) with full criteria, then source the
-// matching creators straight into a CRM list (creators working set) — deduped against
-// the contact history, carrying niche + source. This is the self-sourcing loop.
+// Search = the one creator database (the harvest base, kept high-quality via the terminal).
+// A colleague pulls a precise cut (followers, topic, market …), decides how many to take,
+// and drops them straight into a list — deduped against the CRM so nobody is double-contacted.
 
 type Row = {
   sec_uid: string;
+  tiktok_id: string | null;
   handle: string;
   display_name: string | null;
   follower_count: number | null;
@@ -31,9 +30,9 @@ type SortKey = "follower_count" | "engagement_median" | "sponsored_count";
 type WList = { id: string; name: string };
 
 const COLS =
-  "sec_uid,handle,display_name,follower_count,engagement_median,category,sub_niche,email,email_type,sponsored_count,market,source_type,source_value,source_brand,verified,is_songpush_user,songpush_admin_url";
+  "sec_uid,tiktok_id,handle,display_name,follower_count,engagement_median,category,sub_niche,email,email_type,sponsored_count,market,source_type,source_value,source_brand,verified,is_songpush_user,songpush_admin_url";
 const PAGE = 50;
-const NICHES = [
+const TOPICS = [
   "beauty", "wellness", "fitness", "fashion", "food", "travel", "gaming",
   "tech", "finance", "music", "comedy", "parenting", "home & interior", "sustainability", "lifestyle",
 ];
@@ -44,16 +43,16 @@ const fmt = (n: number | null) => {
   if (n >= 1000) return `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1).replace(/\.0$/, "")}k`;
   return `${n}`;
 };
-const niche = (s: string | null) => (s ? s.replace(/\b\w/g, (c) => c.toUpperCase()) : s);
+const topic = (s: string | null) => (s ? s.replace(/\b\w/g, (c) => c.toUpperCase()) : s);
 
 function erCell(er: number | null) {
   if (er == null) return <span className="muted">—</span>;
   const [color, label] =
-    er < 2 ? ["#767d90", "UGC / tot"] : er > 14 ? ["#8a6100", "mood?"] : ["#16794a", "influencer"];
+    er < 2 ? ["#767d90", "UGC / dead"] : er > 14 ? ["#8a6100", "mood?"] : ["#16794a", "influencer"];
   return <span className="num" style={{ color, fontWeight: 600 }} title={label}>{er}%</span>;
 }
 
-function PoolSearch() {
+export default function Search() {
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -79,6 +78,7 @@ function PoolSearch() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showSource, setShowSource] = useState(false);
   const [scope, setScope] = useState<"all" | "selected">("all");
+  const [takeN, setTakeN] = useState("");            // "how many of the cut to add" (blank = all)
   const [listMode, setListMode] = useState<"new" | "existing">("new");
   const [newListName, setNewListName] = useState("");
   const [existingListId, setExistingListId] = useState("");
@@ -90,16 +90,17 @@ function PoolSearch() {
     return () => clearTimeout(t);
   }, [query]);
 
-  useEffect(() => {
+  const loadLists = useCallback(() => {
     supabase.from("lists").select("id,name").eq("kind", "working").order("name")
       .then(({ data }) => setWorkingLists((data ?? []) as WList[]));
   }, []);
+  useEffect(() => { loadLists(); }, [loadLists]);
 
   const withFilters = useCallback(<T,>(qb: T): T => {
     let q = qb as any;
     const qq = qDeb.trim().replace(/^@/, "").replace(/[,()%*]/g, "");
-    // In a PostgREST .or() the ilike wildcard is * (not %).
-    if (qq) q = q.or(`handle.ilike.*${qq}*,display_name.ilike.*${qq}*,email.ilike.*${qq}*`);
+    // In a PostgREST .or() the ilike wildcard is * (not %). Match handle, name, email, TikTok ID.
+    if (qq) q = q.or(`handle.ilike.*${qq}*,display_name.ilike.*${qq}*,email.ilike.*${qq}*,tiktok_id.ilike.*${qq}*`);
     if (category) q = q.eq("category", category);
     if (market) q = q.eq("market", market);
     if (emailType === "has") q = q.not("email", "is", null);
@@ -162,12 +163,13 @@ function PoolSearch() {
         listId = data.id; listName = data.name;
       } else if (!listId) throw new Error("Choose a list.");
 
+      const cap = takeN ? Math.max(1, Number(takeN)) : 5000;
       let src: Row[];
       if (scope === "selected") {
-        src = rows.filter((r) => selected.has(r.sec_uid));
+        src = rows.filter((r) => selected.has(r.sec_uid)).slice(0, cap);
       } else {
         const { data, error } = await withFilters(supabase.from("tt_creators").select(COLS))
-          .order(sortKey, { ascending: false, nullsFirst: false }).limit(5000);
+          .order(sortKey, { ascending: sortDir === "asc", nullsFirst: false }).limit(cap);
         if (error) throw error;
         src = (data ?? []) as Row[];
       }
@@ -203,11 +205,10 @@ function PoolSearch() {
         if (error) throw error;
         inserted += data?.length ?? 0;
       }
-      setNotice(`${inserted} creators saved to “${listName}”${src.length - fresh.length > 0 ? ` · ${src.length - fresh.length} duplicates skipped` : ""}. Open “Lists” to enrich & send.`);
+      setNotice(`${inserted} creators saved to “${listName}”${src.length - fresh.length > 0 ? ` · ${src.length - fresh.length} duplicates skipped` : ""}. Open “Lists” to send to Instantly.`);
       setSelected(new Set());
       setShowSource(false);
-      supabase.from("lists").select("id,name").eq("kind", "working").order("name")
-        .then(({ data }) => setWorkingLists((data ?? []) as WList[]));
+      loadLists();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -215,21 +216,29 @@ function PoolSearch() {
   }
 
   const selCount = selected.size;
-  const sourceCount = scope === "selected" ? selCount : total;
+  const wouldTake = scope === "selected" ? selCount : total;
+  const sourceCount = takeN ? Math.min(wouldTake, Math.max(1, Number(takeN))) : wouldTake;
 
   return (
     <div>
-      <div className="toolbar">
-        <span className="muted" style={{ fontSize: 13 }}>Fresh creators from the scraper — not yet in your CRM.</span>
+      <div className="toolbar" style={{ marginBottom: 4 }}>
+        <h2 style={{ margin: 0 }}>Search</h2>
         <span className="pill">{total.toLocaleString("en-GB")}</span>
+        <span className="muted" style={{ fontSize: 13 }}>creators in the database</span>
         <div className="grow" />
-        <input placeholder="Handle / name / email…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ minWidth: 200 }} />
+        <div className="search-field">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+            <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
+          </svg>
+          <input placeholder="Handle, name, email or TikTok ID…" value={query} onChange={(e) => setQuery(e.target.value)} />
+          {query && <button className="search-clear" onClick={() => setQuery("")} aria-label="Clear">×</button>}
+        </div>
       </div>
 
       <div className="toolbar">
         <select value={category} onChange={(e) => setCategory(e.target.value)}>
-          <option value="">All niches</option>
-          {NICHES.map((c) => <option key={c} value={c}>{niche(c)}</option>)}
+          <option value="">All topics</option>
+          {TOPICS.map((c) => <option key={c} value={c}>{topic(c)}</option>)}
         </select>
         <select value={market} onChange={(e) => setMarket(e.target.value)}>
           <option value="">All markets</option>
@@ -286,6 +295,9 @@ function PoolSearch() {
                 <input type="radio" checked={scope === "selected"} onChange={() => setScope("selected")} /> {selCount} selected
               </label>
             )}
+            <span className="muted" style={{ fontSize: 13, marginLeft: 8 }}>· take top</span>
+            <input type="number" placeholder="all" value={takeN} onChange={(e) => setTakeN(e.target.value)}
+              style={{ width: 80 }} title={`Blank = all. Takes the top N by ${sortKey === "follower_count" ? "followers" : sortKey}.`} />
           </div>
           <div className="toolbar" style={{ margin: 0 }}>
             <select value={listMode} onChange={(e) => setListMode(e.target.value as "new" | "existing")}>
@@ -322,7 +334,7 @@ function PoolSearch() {
               <th>Creator</th>
               <th style={{ cursor: "pointer" }} onClick={() => sortBy("follower_count")}>Followers{arrow("follower_count")}</th>
               <th style={{ cursor: "pointer" }} onClick={() => sortBy("engagement_median")}>ER{arrow("engagement_median")}</th>
-              <th>Niche</th>
+              <th>Topic</th>
               <th>Market</th>
               <th>Email</th>
               <th style={{ cursor: "pointer" }} onClick={() => sortBy("sponsored_count")}>Ads{arrow("sponsored_count")}</th>
@@ -339,17 +351,14 @@ function PoolSearch() {
                 <tr key={r.sec_uid} className={r.is_songpush_user ? "row-wepush" : undefined}>
                   <td><input type="checkbox" checked={selected.has(r.sec_uid)} onChange={() => toggle(r.sec_uid)} /></td>
                   <td>
-                    <a href={`https://www.tiktok.com/@${r.handle}`} target="_blank" rel="noreferrer" style={{ fontWeight: 600 }}>@{r.handle}</a>
-                    {r.is_songpush_user && (
-                      <a href={r.songpush_admin_url ?? "#"} target="_blank" rel="noreferrer"
-                        className="pill pill-good" style={{ fontSize: 9, marginLeft: 6, textTransform: "none" }}
-                        title="Already a WePush user (Attio)">★ WePush</a>
-                    )}
+                    <a href={r.is_songpush_user && r.songpush_admin_url ? r.songpush_admin_url : `https://www.tiktok.com/@${r.handle}`}
+                      target="_blank" rel="noreferrer" style={{ fontWeight: 600 }}
+                      title={r.is_songpush_user ? "Already a WePush user — opens Attio" : undefined}>@{r.handle}</a>
                     {r.display_name && <div className="muted" style={{ fontSize: 12 }}>{r.display_name}</div>}
                   </td>
                   <td className="num">{fmt(r.follower_count)}</td>
                   <td>{erCell(r.engagement_median)}</td>
-                  <td>{niche(r.category) || <span className="muted">—</span>}</td>
+                  <td>{topic(r.category) || <span className="muted">—</span>}</td>
                   <td className="muted" style={{ fontSize: 12, textTransform: "uppercase" }}>{r.market || "—"}</td>
                   <td style={{ fontSize: 13 }}>{r.email ? <a href={`mailto:${r.email}`}>{r.email}</a> : <span className="muted">—</span>}</td>
                   <td className="num">{r.sponsored_count || 0}</td>
@@ -361,93 +370,6 @@ function PoolSearch() {
         </table>
       </div>
       <Pager page={page} pageSize={PAGE} total={total} onPage={setPage} />
-    </div>
-  );
-}
-
-// ---- Existing leads: the CRM working set (creators already in the pipeline) ----
-const CRM_COLS =
-  "id, handle, tiktok_username, platform, email, region_label, label, sample_creator, status, filter_reason, enriched_at, enriched_payload, campaign_id, date_added, added_to_instantly_at, category, source_type, source_value, first_contacted_at, last_contacted_at, contact_count, last_outcome, next_eligible_at, do_not_contact, campaigns(name)";
-
-function CrmSearch() {
-  const [rows, setRows] = useState<Creator[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [qDeb, setQDeb] = useState("");
-  const [category, setCategory] = useState("");
-  const [contact, setContact] = useState("");
-  const [idle, setIdle] = useState("");
-
-  useEffect(() => { const t = setTimeout(() => setQDeb(query), 300); return () => clearTimeout(t); }, [query]);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    let q: ReturnType<typeof supabase.from>["select"] extends never ? never : any =
-      supabase.from("creators").select(CRM_COLS, { count: "exact" });
-    const qq = qDeb.trim().replace(/^@/, "").replace(/[,()%*]/g, "");
-    if (qq) q = q.or(`handle.ilike.*${qq}*,tiktok_username.ilike.*${qq}*,email.ilike.*${qq}*`);
-    if (category) q = q.eq("category", category);
-    if (contact === "contacted") q = q.gt("contact_count", 0);
-    else if (contact === "not") q = q.or("contact_count.is.null,contact_count.eq.0");
-    if (idle) q = q.lte("last_contacted_at", new Date(Date.now() - Number(idle) * 86_400_000).toISOString());
-    q = q.order("date_added", { ascending: false }).range(page * PAGE, page * PAGE + PAGE - 1);
-    const { data, count, error: err } = await q;
-    if (err) setError(err.message);
-    else { setRows((data ?? []) as unknown as Creator[]); setTotal(count ?? 0); }
-    setLoading(false);
-  }, [qDeb, category, contact, idle, page]);
-
-  useEffect(() => { setPage(0); }, [qDeb, category, contact, idle]);
-  useEffect(() => { void load(); }, [load]);
-
-  return (
-    <div>
-      <div className="toolbar">
-        <span className="muted" style={{ fontSize: 13 }}>Your existing CRM leads (imported / already in the pipeline).</span>
-        <span className="pill">{total.toLocaleString("en-GB")}</span>
-        <div className="grow" />
-        <input placeholder="Handle / email…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ minWidth: 200 }} />
-      </div>
-      <div className="toolbar">
-        <select value={category} onChange={(e) => setCategory(e.target.value)}>
-          <option value="">All niches</option>
-          {NICHES.map((c) => <option key={c} value={c}>{niche(c)}</option>)}
-        </select>
-        <select value={contact} onChange={(e) => setContact(e.target.value)}>
-          <option value="">Contacted or not</option>
-          <option value="contacted">Contacted</option>
-          <option value="not">Not contacted</option>
-        </select>
-        <select value={idle} onChange={(e) => setIdle(e.target.value)}>
-          <option value="">Any time</option>
-          <option value="30">Last contact 30+ days ago</option>
-          <option value="60">60+ days ago</option>
-          <option value="90">90+ days ago</option>
-        </select>
-      </div>
-      {error && <div className="error">{error}</div>}
-      <CreatorTable creators={rows} loading={loading} searchable={false} emptyText="No leads for this filter." />
-      <Pager page={page} pageSize={PAGE} total={total} onPage={setPage} />
-    </div>
-  );
-}
-
-export default function Search() {
-  const [mode, setMode] = useState<"new" | "existing">("new");
-  return (
-    <div>
-      <div className="toolbar" style={{ marginBottom: 4 }}>
-        <h2 style={{ margin: 0 }}>Search</h2>
-        <div className="segmented" style={{ marginLeft: 8 }}>
-          <button className={`seg ${mode === "new" ? "active" : ""}`} onClick={() => setMode("new")}>New</button>
-          <button className={`seg ${mode === "existing" ? "active" : ""}`} onClick={() => setMode("existing")}>Existing</button>
-        </div>
-      </div>
-      {mode === "new" ? <PoolSearch /> : <CrmSearch />}
     </div>
   );
 }

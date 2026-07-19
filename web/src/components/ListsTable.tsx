@@ -7,6 +7,7 @@ export interface ListRow extends List {
   enriched: number;
   filtered: number;
   in_instantly: number;
+  href?: string;   // override link target (used by the idle/recycle segments)
 }
 
 interface Props {
@@ -40,23 +41,26 @@ export default function ListsTable({ rows, loading }: Props) {
               <td colSpan={7} className="center-loading">No lists yet.</td>
             </tr>
           ) : (
-            rows.map((l) => (
-              <tr key={l.id}>
-                <td>
-                  <Link to={`/lists/${l.id}`} style={{ fontWeight: 600 }}>
-                    {l.name}
-                  </Link>
-                </td>
-                <td>
-                  <span className="pill pill-new">{l.kind}</span>
-                </td>
-                <td>{l.total.toLocaleString("en-GB")}</td>
-                <td>{l.sourced}</td>
-                <td style={{ color: "#16794a" }}>{l.enriched}</td>
-                <td style={{ color: "#b83636" }}>{l.filtered}</td>
-                <td>{l.in_instantly.toLocaleString("en-GB")}</td>
-              </tr>
-            ))
+            rows.map((l) => {
+              const recycle = l.kind === "recycle";
+              return (
+                <tr key={l.id}>
+                  <td>
+                    <Link to={l.href ?? `/lists/${l.id}`} style={{ fontWeight: 600 }}>
+                      {l.name}
+                    </Link>
+                  </td>
+                  <td>
+                    <span className={`pill ${recycle ? "pill-neutral" : "pill-new"}`}>{l.kind}</span>
+                  </td>
+                  <td>{l.total.toLocaleString("en-GB")}</td>
+                  <td>{recycle ? "—" : l.sourced}</td>
+                  <td style={{ color: "#16794a" }}>{recycle ? "—" : l.enriched}</td>
+                  <td style={{ color: "#b83636" }}>{recycle ? "—" : l.filtered}</td>
+                  <td>{recycle ? "—" : l.in_instantly.toLocaleString("en-GB")}</td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>

@@ -11,7 +11,7 @@ export type LeadStatus =
   | "enriched"
   | "filtered";
 
-export type ListKind = "working" | "legacy" | "filtered";
+export type ListKind = "working" | "legacy" | "filtered" | "recycle";
 
 export interface List {
   id: string;
@@ -69,6 +69,10 @@ export interface Creator {
   status: LeadStatus;
   list_id: string | null;
   campaign_id: string | null;
+  // Reach signals carried over from the harvest base (null on older imported rows).
+  follower_count?: number | null;
+  engagement_median?: number | null;
+  category?: string | null;
   filter_reason: string | null;
   enriched_at: string | null;
   enriched_payload: unknown;

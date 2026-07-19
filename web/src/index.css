@@ -436,6 +436,70 @@ tbody tr:last-child td {
   color: #b83636;
 }
 
+/* Subtle text button (secondary actions like "enrich raw first"). */
+.link-btn {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0 0;
+}
+.link-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.link-btn:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+/* Chic search field: icon + inline clear, focus ring picks up the accent. */
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 280px;
+  padding: 0 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.search-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.search-field svg {
+  color: var(--muted);
+  flex: none;
+}
+.search-field input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 8px 0;
+  font-size: 13px;
+  outline: none;
+  color: inherit;
+}
+.search-field input::placeholder {
+  color: var(--muted);
+}
+.search-clear {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.search-clear:hover {
+  color: var(--text);
+}
+
 /* Existing WePush user (Attio match): tint the whole row so it reads at a glance
    that we already have a relationship — don't cold-approach these. */
 .row-wepush td {

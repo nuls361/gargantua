@@ -15,6 +15,7 @@ import Creators from "./pages/Creators";
 import Brands from "./pages/Brands";
 import Sounds from "./pages/Sounds";
 import Seeds from "./pages/Seeds";
+import Harvest from "./pages/Harvest";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -66,6 +67,7 @@ export default function App() {
           <Route path="/campaigns" element={<Campaigns />} />
           <Route path="/campaigns/:id" element={<Campaigns />} />
           <Route path="/search" element={<Creators />} />
+          <Route path="/harvest" element={<Harvest />} />
           <Route path="/brands" element={<Brands />} />
           <Route path="/hashtags" element={<Hashtags />} />
           <Route path="/sounds" element={<Sounds />} />
@@ -139,10 +141,7 @@ function Sidebar({ email }: { email: string }) {
         <NavLink to="/dashboard">Dashboard</NavLink>
         <div className="nav-section">Discover</div>
         <NavLink to="/search">Search</NavLink>
-        <NavLink to="/brands">Brands</NavLink>
-        <NavLink to="/hashtags">Hashtags</NavLink>
-        <NavLink to="/sounds">Sounds</NavLink>
-        <NavLink to="/seeds">Creator seeds</NavLink>
+        <NavLink to="/harvest">Harvest</NavLink>
         <div className="nav-section">Pipeline</div>
         <NavLink to="/lists">Lists</NavLink>
       </nav>

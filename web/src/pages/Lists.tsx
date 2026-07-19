@@ -61,6 +61,13 @@ function ListsOverview() {
     })();
   }, []);
 
+  // The idle/recycle segments render as ordinary rows at the top of the lists table.
+  const idleRows: ListRow[] = [30, 60, 90].map((d) => ({
+    id: `recycle-${d}`, name: `♻️ ${d}+ days idle`, kind: "recycle",
+    created_at: "", total: recycle[d] ?? 0, sourced: 0, enriched: 0, filtered: 0,
+    in_instantly: 0, href: `/lists/recycle?days=${d}`,
+  }));
+
   return (
     <div>
       <div className="toolbar">
@@ -68,26 +75,12 @@ function ListsOverview() {
         <div className="grow" />
       </div>
       <p className="muted">
-        Each list is a batch. <strong>Source</strong> → <strong>enrich</strong> → <strong>to
-        Instantly</strong>. The contact state prevents double-contacts.
+        Each list is a batch. <strong>Source</strong> in Search → <strong>send to Instantly</strong>.
+        The contact state prevents double-contacts. The <strong>♻️ idle</strong> lists are
+        auto-built: contacted leads that never replied, ready to re-approach.
       </p>
 
-      <div className="nav-section" style={{ padding: "0 0 6px" }}>Recycle segments</div>
-      <div style={{ display: "flex", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
-        {[30, 60, 90].map((d) => (
-          <Link key={d} to={`/lists/recycle?days=${d}`} className="recycle-card" style={{ flex: "1 1 200px" }}>
-            <span className="recycle-emoji">♻️</span>
-            <div>
-              <div className="recycle-title">{d}+ days idle</div>
-              <div className="recycle-sub">Contacted, no reply — free to re-approach</div>
-            </div>
-            <span className="recycle-count">{recycle[d] == null ? "…" : recycle[d].toLocaleString("en-GB")}</span>
-          </Link>
-        ))}
-      </div>
-
-      <div className="nav-section" style={{ padding: "0 0 6px" }}>Lists</div>
-      <ListsTable rows={rows} loading={loading} />
+      <ListsTable rows={[...idleRows, ...rows]} loading={loading} />
     </div>
   );
 }
@@ -246,39 +239,35 @@ function ListDetail({ id }: { id: string }) {
       {isWorking && (
         <div className="action-card">
           <div className="action-step">
-            <div className="action-num">1</div>
-            <div className="action-body">
-              <div className="action-title">Enrich</div>
-              <div className="action-sub">Clean emails & pull profiles</div>
-            </div>
-            <button className={sourced > 0 ? "primary" : ""} onClick={enrich} disabled={working || sourced === 0}>
-              {working ? "Working…" : sourced > 0 ? `▶ Enrich ${sourced.toLocaleString("en-GB")}` : "Nothing raw"}
-            </button>
-          </div>
-          <div className="action-divider" />
-          <div className="action-step">
-            <div className="action-num">2</div>
             <div className="action-body">
               <div className="action-title">Send to Instantly</div>
-              <div className="action-sub">Enriched into a campaign</div>
+              <div className="action-sub">
+                {enriched.toLocaleString("en-GB")} ready
+                {sourced > 0 ? ` · ${sourced.toLocaleString("en-GB")} still need an email` : ""}
+              </div>
             </div>
-            <select value={sendCampaign} onChange={(e) => setSendCampaign(e.target.value)} style={{ minWidth: 180 }}>
+            <select value={sendCampaign} onChange={(e) => setSendCampaign(e.target.value)} style={{ minWidth: 200 }}>
               <option value="">Choose a campaign…</option>
               {campaigns.filter((c) => c.instantly_campaign_id).map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
             <button className={enriched > 0 && sendCampaign ? "primary" : ""} onClick={send} disabled={working || !sendCampaign || enriched === 0}>
-              {enriched > 0 ? `▶ Send ${enriched.toLocaleString("en-GB")}` : "Nothing ready"}
+              {working ? "Working…" : enriched > 0 ? `▶ Send ${enriched.toLocaleString("en-GB")} to Instantly` : "Nothing ready"}
             </button>
           </div>
+          {sourced > 0 && (
+            <button className="link-btn" onClick={enrich} disabled={working} title="Pull profiles & clean emails for the raw creators">
+              {working ? "Enriching…" : `Enrich ${sourced.toLocaleString("en-GB")} raw first`}
+            </button>
+          )}
         </div>
       )}
 
       <div className="toolbar">
         <input placeholder="Handle / email…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ minWidth: 180 }} />
         <select value={fCategory} onChange={(e) => setFCategory(e.target.value)}>
-          <option value="">All niches</option>
+          <option value="">All topics</option>
           {NICHES.map((c) => <option key={c} value={c}>{cap(c)}</option>)}
         </select>
         <select value={fMarket} onChange={(e) => setFMarket(e.target.value)}>

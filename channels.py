@@ -31,7 +31,8 @@ def _attio_reconcile(supa, creators, log):
         return
     try:
         from reconcile_attio import reconcile_batch
-        n = reconcile_batch(supa, {c["sec_uid"]: c["handle"] for c in creators if c.get("handle")})
+        # reconcile_batch wants {handle: sec_uid}.
+        n = reconcile_batch(supa, {c["handle"]: c["sec_uid"] for c in creators if c.get("handle")})
         if n:
             log(f"  attio: {n} already Songpush users")
     except Exception as e:
