@@ -83,6 +83,11 @@ function ListsOverview() {
 const STAGES: PipelineStage[] = ["roh", "angereichert", "ausgespielt", "aussortiert"];
 const CS_ORDER: ContactState[] = ["never", "cooldown", "contacted", "replied", "bounced", "dnc"];
 const PAGE = 50;
+const NICHES = [
+  "beauty", "wellness", "fitness", "fashion", "food", "travel", "gaming", "tech",
+  "finance", "music", "comedy", "parenting", "home & interior", "sustainability", "lifestyle",
+];
+const cap = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
 
 type Stats = { total: number; status: Record<string, number>; contact: Record<string, number> };
 
@@ -91,6 +96,14 @@ function ListDetail({ id }: { id: string }) {
   const [members, setMembers] = useState<Creator[]>([]);
   const [stats, setStats] = useState<Stats>({ total: 0, status: {}, contact: {} });
   const [page, setPage] = useState(0);
+  const [filteredTotal, setFilteredTotal] = useState(0);
+  const [query, setQuery] = useState("");
+  const [qDeb, setQDeb] = useState("");
+  const [fCategory, setFCategory] = useState("");
+  const [fEmail, setFEmail] = useState("");
+  const [fMarket, setFMarket] = useState("");
+  const [fContact, setFContact] = useState("");
+  const [fIdle, setFIdle] = useState("");
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [sendCampaign, setSendCampaign] = useState("");
   const [loading, setLoading] = useState(true);
@@ -107,18 +120,28 @@ function ListDetail({ id }: { id: string }) {
     setStats((s as Stats) ?? { total: 0, status: {}, contact: {} });
   }, [id]);
 
+  useEffect(() => { const t = setTimeout(() => setQDeb(query), 300); return () => clearTimeout(t); }, [query]);
+
   const loadPage = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from("creators")
-      .select(CREATOR_COLS)
-      .eq("list_id", id)
-      .order("date_added", { ascending: false })
-      .range(page * PAGE, page * PAGE + PAGE - 1);
+    let q: ReturnType<typeof supabase.from> extends never ? never : any =
+      supabase.from("creators").select(CREATOR_COLS, { count: "exact" }).eq("list_id", id);
+    const qq = qDeb.trim().replace(/^@/, "").replace(/[,()%*]/g, "");
+    if (qq) q = q.or(`handle.ilike.*${qq}*,tiktok_username.ilike.*${qq}*,email.ilike.*${qq}*`);
+    if (fCategory) q = q.eq("category", fCategory);
+    if (fMarket) q = q.eq("region_label", fMarket);
+    if (fEmail === "has") q = q.not("email", "is", null);
+    else if (fEmail === "none") q = q.is("email", null);
+    if (fContact === "contacted") q = q.gt("contact_count", 0);
+    else if (fContact === "not") q = q.or("contact_count.is.null,contact_count.eq.0");
+    if (fIdle) q = q.lte("last_contacted_at", new Date(Date.now() - Number(fIdle) * 86_400_000).toISOString());
+    const { data, count } = await q.order("date_added", { ascending: false }).range(page * PAGE, page * PAGE + PAGE - 1);
     setMembers((data ?? []) as unknown as Creator[]);
+    setFilteredTotal(count ?? 0);
     setLoading(false);
-  }, [id, page]);
+  }, [id, page, qDeb, fCategory, fEmail, fMarket, fContact, fIdle]);
 
+  useEffect(() => { setPage(0); }, [qDeb, fCategory, fEmail, fMarket, fContact, fIdle]);
   useEffect(() => { void loadStats(); }, [loadStats]);
   useEffect(() => { void loadPage(); }, [loadPage]);
   useEffect(() => {
@@ -240,8 +263,39 @@ function ListDetail({ id }: { id: string }) {
         </div>
       )}
 
-      <CreatorTable creators={members} loading={loading} searchable={false} emptyText="Keine Mitglieder." />
-      <Pager page={page} pageSize={PAGE} total={stats.total} onPage={setPage} />
+      <div className="toolbar">
+        <input placeholder="Handle / email…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ minWidth: 180 }} />
+        <select value={fCategory} onChange={(e) => setFCategory(e.target.value)}>
+          <option value="">All niches</option>
+          {NICHES.map((c) => <option key={c} value={c}>{cap(c)}</option>)}
+        </select>
+        <select value={fMarket} onChange={(e) => setFMarket(e.target.value)}>
+          <option value="">All markets</option>
+          <option value="dach">DACH</option>
+          <option value="uk">UK</option>
+        </select>
+        <select value={fEmail} onChange={(e) => setFEmail(e.target.value)}>
+          <option value="">Email any</option>
+          <option value="has">Has email</option>
+          <option value="none">No email</option>
+        </select>
+        <select value={fContact} onChange={(e) => setFContact(e.target.value)}>
+          <option value="">Contacted or not</option>
+          <option value="contacted">Contacted</option>
+          <option value="not">Not contacted</option>
+        </select>
+        <select value={fIdle} onChange={(e) => setFIdle(e.target.value)}>
+          <option value="">Any time</option>
+          <option value="30">Last contact 30+ days ago</option>
+          <option value="60">60+ days ago</option>
+          <option value="90">90+ days ago</option>
+        </select>
+        <div className="grow" />
+        <span className="muted" style={{ fontSize: 12 }}>{filteredTotal.toLocaleString("en-GB")} shown</span>
+      </div>
+
+      <CreatorTable creators={members} loading={loading} searchable={false} emptyText="No members for this filter." />
+      <Pager page={page} pageSize={PAGE} total={filteredTotal} onPage={setPage} />
     </div>
   );
 }
