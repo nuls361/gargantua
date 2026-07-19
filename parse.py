@@ -255,8 +255,7 @@ def dach_language_ratio(post_field_list: list) -> float:
 # --------------------------------------------------------------------------- #
 
 CATEGORY_SIGNALS = {
-    "skincare":        ["hautpflege","skincare","pflegeroutine","serum","retinol","akne","unreinheiten","feuchtigkeit","haut"],
-    "beauty":          ["makeup","beauty","cosmetic","mascara","foundation","lippen","lipstick","contouring","blush","glowup","parfum","fragrance","nails","naegel","maniküre","augen"],
+    "beauty":          ["makeup","beauty","cosmetic","mascara","foundation","lippen","lipstick","contouring","blush","glowup","parfum","fragrance","nails","naegel","maniküre","augen","hautpflege","beauty","pflegeroutine","serum","retinol","akne","unreinheiten","feuchtigkeit","haut"],
     "wellness":        ["wellness","selfcare","mentalhealth","achtsamkeit","yoga","meditation","gesundheit","wohlbefinden","journaling","selflove"],
     "fitness":         ["fitness","gym","workout","abnehmen","muskel","training","protein","gains","homeworkout","laufen","running","sport"],
     "fashion":         ["outfit","mode","fashion","style","ootd","streetwear","haul","dress","kleid","zara","shopping","inspo","lookbook"],
@@ -307,7 +306,7 @@ BRAND_CATEGORY = {
     # beauty / skincare
     "douglas": "beauty", "sephora": "beauty", "rossmann": "beauty", "dm": "beauty",
     "loreal": "beauty", "maybelline": "beauty", "catrice": "beauty", "essence": "beauty",
-    "rhode": "skincare", "cerave": "skincare", "paulaschoice": "skincare", "yepoda": "skincare",
+    "rhode": "beauty", "cerave": "beauty", "paulaschoice": "beauty", "yepoda": "beauty",
     "caiacosmetics": "beauty", "kessberlin": "beauty", "luamaya": "beauty",
     # fashion
     "zara": "fashion", "nakdfashion": "fashion", "aboutyou": "fashion", "hm": "fashion",

@@ -34,7 +34,7 @@ const COLS =
   "sec_uid,handle,display_name,follower_count,engagement_median,category,sub_niche,email,email_type,sponsored_count,market,source_type,source_value,source_brand,verified,is_songpush_user,songpush_admin_url";
 const PAGE = 50;
 const NICHES = [
-  "skincare", "beauty", "wellness", "fitness", "fashion", "food", "travel", "gaming",
+  "beauty", "wellness", "fitness", "fashion", "food", "travel", "gaming",
   "tech", "finance", "music", "comedy", "parenting", "home & interior", "sustainability", "lifestyle",
 ];
 
@@ -271,7 +271,7 @@ function PoolSearch() {
         <div className="grow" />
         {selCount > 0 && <button onClick={() => setSelected(new Set())}>Auswahl leeren</button>}
         <button className="primary" onClick={() => { setScope(selCount > 0 ? "selected" : "all"); setShowSource((v) => !v); }} disabled={total === 0}>
-          In Liste sourcen ▾
+          Save to list ▾
         </button>
       </div>
 
@@ -301,7 +301,7 @@ function PoolSearch() {
               </select>
             )}
             <button className="primary" onClick={doSource} disabled={sourcing}>
-              {sourcing ? "Source…" : `▶ ${sourceCount.toLocaleString("de-DE")} sourcen`}
+              {sourcing ? "Saving…" : `▶ Save ${sourceCount.toLocaleString("en-GB")}`}
             </button>
           </div>
           <p className="muted" style={{ fontSize: 12, margin: "10px 0 0" }}>
@@ -349,10 +349,7 @@ function PoolSearch() {
                   </td>
                   <td className="num">{fmt(r.follower_count)}</td>
                   <td>{erCell(r.engagement_median)}</td>
-                  <td>
-                    {niche(r.category) || <span className="muted">—</span>}
-                    {r.sub_niche && <div className="muted" style={{ fontSize: 12 }}>{niche(r.sub_niche)}</div>}
-                  </td>
+                  <td>{niche(r.category) || <span className="muted">—</span>}</td>
                   <td className="muted" style={{ fontSize: 12, textTransform: "uppercase" }}>{r.market || "—"}</td>
                   <td style={{ fontSize: 13 }}>{r.email ? <a href={`mailto:${r.email}`}>{r.email}</a> : <span className="muted">—</span>}</td>
                   <td className="num">{r.sponsored_count || 0}</td>
