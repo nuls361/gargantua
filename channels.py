@@ -19,6 +19,7 @@ from enrich import Enricher, BudgetExceeded
 DEFAULT_PAGES = 8
 JOB_BUDGET_USD = 2.00          # per-job enrich cap if the job doesn't set one
 ENRICH_MIN, ENRICH_MAX = 1000, 250_000   # the selective-enrich follower tier
+MIN_FOLLOWERS = 1000                       # quality gate: don't store creators below this
 
 
 def _stub_row(c: dict, source_type: str, source_value: str, source_channel: str, region_default):
@@ -50,8 +51,11 @@ def _store_and_enrich(prov, supa, job, creators, *, source_type, source_value,
     region_default = opts.get("region")               # 'dach' | None
     budget = float(opts.get("budget_usd", JOB_BUDGET_USD))
 
+    # Quality gate: only store creators with >=1000 followers (no junk in the index).
     rows, region_by = [], {}
     for c in creators:
+        if (c.get("followers") or 0) < MIN_FOLLOWERS:
+            continue
         row, region = _stub_row(c, source_type, source_value, source_channel, region_default)
         rows.append(row)
         region_by[c["sec_uid"]] = region
