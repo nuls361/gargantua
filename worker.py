@@ -73,6 +73,20 @@ def main():
           f"anthropic={have('ANTHROPIC_API_KEY')}  poll={POLL_SECONDS}s  "
           f"autonomous_cap=${DAILY_CAP_USD:.2f}/day", flush=True)
 
+    # One-shot recursive crawl (set CRAWL=1 to run on boot, then remove the var).
+    # Runs before the poll loop; the daily/hard budget is a ceiling on TikHub spend.
+    if os.environ.get("CRAWL"):
+        budget = float(os.environ.get("CRAWL_BUDGET", "36"))
+        depth = int(os.environ.get("CRAWL_DEPTH", "3"))
+        print(f"[worker] CRAWL=1 — running {depth}-layer crawl, budget ${budget:.2f}. "
+              f"Remove the CRAWL env var after it finishes so a restart doesn't re-run it.",
+              flush=True)
+        try:
+            from crawl import run as crawl_run
+            crawl_run(budget=budget, depth=depth)
+        except Exception as e:
+            print(f"[worker] crawl ended: {type(e).__name__}: {str(e)[:200]}", flush=True)
+
     while _running:
         try:
             job = supa.claim_next_job()

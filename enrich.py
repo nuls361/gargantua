@@ -375,11 +375,27 @@ class Enricher:
             })
         # feed channel B: this creator's hashtags become DACH-premium discovery seeds
         new = self._harvest(None, posts, sec) if market == "dach" else 0
+        # entities this creator used -> the fuel for the next crawl layer (dedup upstream)
+        htags = Counter()
+        for p in posts:
+            for t in (p.get("hashtags") or []):
+                tl = (t or "").lower().strip()
+                if len(tl) >= 4 and tl not in HASHTAG_STOP and not tl.isdigit():
+                    htags[tl] += 1
+        sounds, seen_s = [], set()
+        for p in posts:
+            sid = p.get("sound_id")
+            if sid and not p.get("sound_is_original") and str(sid) not in seen_s:
+                seen_s.add(str(sid)); sounds.append(str(sid))
+        brand_handles = list(dict.fromkeys((b or "").lstrip("@") for b in brands if b))
         summary = {
             "sec_uid": sec, "handle": stub.get("handle"), "followers": stub.get("follower_count"),
             "market": market, "email": stub.get("email"),
             "engagement_median": parse.engagement_rate(posts),
             "category": cat, "posts": len(posts), "recent": len(recent),
+            "hashtags": [t for t, _ in htags.most_common(8)],
+            "sounds": sounds[:5],
+            "brands": brand_handles[:5],
         }
         return new, ("qualified" if market == "dach" else "out_of_market"), summary
 
