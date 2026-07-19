@@ -15,18 +15,35 @@ from __future__ import annotations
 
 import re
 
+import requests
+
 import parse
 import freemail
 
 DACH_REGIONS = {"DE", "AT", "CH"}
 
+_SHORTLINK = re.compile(r"https?://(?:vm|vt|m)\.tiktok\.com/", re.I)
+
+
+def _expand_shortlink(url: str) -> str:
+    """vm.tiktok.com / vt.tiktok.com share links redirect to the real URL (a /music/…
+    or /video/… page). Follow the redirect so the id-regex has something to match."""
+    try:
+        r = requests.get(url, allow_redirects=True, timeout=15,
+                         headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)"})
+        return r.url or url
+    except requests.RequestException:
+        return url
+
 
 def resolve_music_id(prov, value: str) -> tuple[str | None, str | None]:
-    """Return (music_id, title). Accepts a raw music_id, a TikTok sound URL, or a name.
-    A name is resolved to the most-used matching sound (by user_count)."""
+    """Return (music_id, title). Accepts a raw music_id, a TikTok sound URL (incl. a
+    vm./vt. short link), or a name. A name is resolved to the most-used matching sound."""
     v = (value or "").strip()
     if v.isdigit():
         return v, None
+    if _SHORTLINK.match(v):
+        v = _expand_shortlink(v)          # -> full tiktok.com/... URL
     m = (re.search(r"/music/[^/?#]*?-(\d{6,})", v)   # .../music/original-sound-123456789
          or re.search(r"[?&]music_id=(\d+)", v)
          or (re.search(r"\b(\d{15,})\b", v) if not v.startswith("http") else None))
