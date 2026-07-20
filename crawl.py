@@ -118,7 +118,12 @@ def run(budget: float = 36.0, depth: int = 3, pages: int = 6):
     # Seeds: CRAWL_SEEDS env ("brand:larocheposay,hashtag:hautpflege,sound:123…") overrides
     # the default sound seeds, so a DACH run can start from the German brands instead.
     seed_env = os.environ.get("CRAWL_SEEDS", "").strip()
-    if seed_env:
+    if seed_env.startswith("brands:"):
+        # CRAWL_SEEDS=brands:dach | brands:dachuk -> load classified brands from the DB
+        markets = "dach,uk" if "uk" in seed_env.split(":", 1)[1] else "dach"
+        brows = supa._get("brands", {"select": "handle", "market": f"in.({markets})", "limit": "3000"})
+        seeds = [("brand", (r.get("handle") or "").lstrip("@")) for r in brows if r.get("handle")]
+    elif seed_env:
         seeds = []
         for tok in seed_env.split(","):
             tok = tok.strip()
