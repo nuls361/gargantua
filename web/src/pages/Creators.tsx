@@ -25,12 +25,13 @@ type Row = {
   verified: boolean | null;
   is_songpush_user: boolean | null;
   songpush_admin_url: string | null;
+  platform: string | null;
 };
 type SortKey = "follower_count" | "engagement_median" | "sponsored_count";
 type WList = { id: string; name: string };
 
 const COLS =
-  "sec_uid,tiktok_id,handle,display_name,follower_count,engagement_median,category,sub_niche,email,email_type,sponsored_count,market,source_type,source_value,source_brand,verified,is_songpush_user,songpush_admin_url";
+  "sec_uid,tiktok_id,handle,display_name,follower_count,engagement_median,category,sub_niche,email,email_type,sponsored_count,market,source_type,source_value,source_brand,verified,is_songpush_user,songpush_admin_url,platform";
 const PAGE = 50;
 const TOPICS = [
   "beauty", "wellness", "fitness", "fashion", "food", "travel", "gaming",
@@ -71,6 +72,7 @@ export default function Search() {
   const [bandOnly, setBandOnly] = useState(false);
   const [sourceType, setSourceType] = useState("");
   const [songpush, setSongpush] = useState("");
+  const [platform, setPlatform] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("follower_count");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -109,10 +111,11 @@ export default function Search() {
     if (follMax) q = q.lte("follower_count", Number(follMax));
     if (bandOnly) q = q.gte("engagement_median", 2).lte("engagement_median", 14);
     if (sourceType) q = q.eq("source_type", sourceType);
+    if (platform) q = q.eq("platform", platform);
     if (songpush === "only") q = q.eq("is_songpush_user", true);
     else if (songpush === "exclude") q = q.or("is_songpush_user.is.null,is_songpush_user.eq.false");
     return q as T;
-  }, [qDeb, category, market, emailType, follMin, follMax, bandOnly, sourceType, songpush]);
+  }, [qDeb, category, market, emailType, follMin, follMax, bandOnly, sourceType, songpush, platform]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -126,7 +129,7 @@ export default function Search() {
     setLoading(false);
   }, [withFilters, sortKey, sortDir, page]);
 
-  useEffect(() => { setPage(0); }, [qDeb, category, market, emailType, follMin, follMax, bandOnly, sourceType, songpush]);
+  useEffect(() => { setPage(0); }, [qDeb, category, market, emailType, follMin, follMax, bandOnly, sourceType, songpush, platform]);
   useEffect(() => { void load(); }, [load]);
 
   function sortBy(k: SortKey) {
@@ -248,6 +251,11 @@ export default function Search() {
           <option value="us">US</option>
           <option value="other">Other</option>
         </select>
+        <select value={platform} onChange={(e) => setPlatform(e.target.value)}>
+          <option value="">All platforms</option>
+          <option value="tiktok">TikTok</option>
+          <option value="instagram">Instagram</option>
+        </select>
         <select value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
           <option value="">All sources</option>
           <option value="brand">Brand</option>
@@ -353,9 +361,12 @@ export default function Search() {
                 <tr key={r.sec_uid} className={r.is_songpush_user ? "row-wepush" : undefined}>
                   <td><input type="checkbox" checked={selected.has(r.sec_uid)} onChange={() => toggle(r.sec_uid)} /></td>
                   <td>
-                    <a href={r.is_songpush_user && r.songpush_admin_url ? r.songpush_admin_url : `https://www.tiktok.com/@${r.handle}`}
+                    <a href={r.is_songpush_user && r.songpush_admin_url ? r.songpush_admin_url : (r.platform === "instagram" ? `https://www.instagram.com/${r.handle}` : `https://www.tiktok.com/@${r.handle}`)}
                       target="_blank" rel="noreferrer" style={{ fontWeight: 600 }}
                       title={r.is_songpush_user ? "Already a WePush user — opens Attio" : undefined}>@{r.handle}</a>
+                    <span className="pill pill-neutral" style={{ fontSize: 9, marginLeft: 6, textTransform: "none" }}>
+                      {r.platform === "instagram" ? "IG" : "TT"}
+                    </span>
                     {r.display_name && <div className="muted" style={{ fontSize: 12 }}>{r.display_name}</div>}
                   </td>
                   <td className="num">{fmt(r.follower_count)}</td>
