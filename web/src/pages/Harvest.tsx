@@ -91,9 +91,9 @@ export default function Harvest() {
         .limit(2000),
       supabase.from("brand_overview")
         .select("handle,creators_found,creators_dach,creators_uk,creators_enriched,last_seen")
-        // harvested brands (have creators) + the ones added by hand — not the raw
-        // auto-discovered candidates (those flood the list until harvested).
-        .or("creators_found.gt.0,discovered_via.eq.manual").limit(2000),
+        // harvested brands (have creators) + everything classified DACH/UK by account
+        // language — the out-of-market "other" candidates stay hidden.
+        .or("creators_found.gt.0,market.in.(dach,uk)").limit(2000),
     ]);
     if (srcRes.error) setError(srcRes.error.message);
     const src = (srcRes.data ?? []) as Row[];
