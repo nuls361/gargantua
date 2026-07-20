@@ -170,7 +170,9 @@ Deno.serve(async (req) => {
           },
           body: JSON.stringify({
             campaign_id: instCampaignId,
-            skip_if_in_workspace: true,
+            // Normal send dedupes against the workspace; a resend deliberately re-adds
+            // leads that are already in another campaign (cooldown is only a guide).
+            skip_if_in_workspace: body?.resend ? false : true,
             leads,
           }),
         });

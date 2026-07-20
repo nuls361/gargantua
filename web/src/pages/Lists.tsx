@@ -205,7 +205,7 @@ function ListDetail({ id }: { id: string }) {
       if (flipErr) { setWorking(false); setError(`Resend prep failed: ${flipErr.message}`); return; }
     }
     const { data, error: err } = await supabase.functions.invoke("push-to-instantly", {
-      body: { list_id: id, instantly_campaign_id: camp.instantly_campaign_id },
+      body: { list_id: id, instantly_campaign_id: camp.instantly_campaign_id, resend },
     });
     setWorking(false);
     if (err) { setError(`Send failed: ${err.message}`); return; }
