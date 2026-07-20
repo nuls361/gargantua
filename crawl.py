@@ -29,6 +29,7 @@ from creator_harvest import harvest_creator
 from repost_harvest import harvest_brand, region_from_email
 
 MIN_FOLLOWERS = 1000
+MAX_FOLLOWERS = 250_000              # bookable tier ceiling (same as channels/enrich)
 MAX_CANDIDATES_PER_SOURCE = 80       # keepers enriched per source (breadth guard)
 NEXT_CAP = {"hashtag": 20, "sound": 12, "brand": 12}   # entities pushed to next layer / source
 FUNDS_MARKERS = ("insufficient", "balance", "quota", "402", "payment", "not enough", "credit")
@@ -193,7 +194,7 @@ def run(budget: float = 36.0, depth: int = 3, pages: int = 6):
                 c["bio"] = c.get("bio") or pf.get("bio")
                 if not c.get("email"):
                     c["email"] = parse.email_from_bio(pf.get("bio", ""))
-            if not isinstance(fol, int) or fol < MIN_FOLLOWERS:
+            if not isinstance(fol, int) or not (MIN_FOLLOWERS <= fol <= MAX_FOLLOWERS):
                 continue
 
             email = c.get("email")
@@ -229,21 +230,31 @@ def run(budget: float = 36.0, depth: int = 3, pages: int = 6):
             except Exception:
                 continue
 
+            # HARD criteria (market + ER are only known post-enrich): DACH/UK AND ER 2–14%.
+            # Followers were already gated 1k–250k pre-enrich. Anything failing is removed
+            # again so the pool only ever holds creators that match all three.
+            mkt = summ.get("market") if summ else None
+            er = summ.get("engagement_median") if summ else None
+            if mkt not in ("dach", "uk") or not isinstance(er, (int, float)) or not (2 <= er <= 14):
+                try:
+                    supa.delete_creator(sec)
+                except Exception:
+                    pass
+                continue
+
             kept += 1
             src_kept += 1
-            # Only DACH/UK keepers seed the next layer + the Brands view -> the snowball
-            # stays in-market instead of drifting global (this was the €-eating bug).
-            if summ and summ.get("market") in ("dach", "uk"):
-                for b in summ.get("brands", []):
-                    bh = (b or "").lstrip("@")
-                    if 2 <= len(bh) <= 30:
-                        brands_found.add(bh)
-                if depth + 1 < args.depth:
-                    for t in summ.get("hashtags", []):
-                        next_ent["hashtag"].add(t)
-                    for s in summ.get("sounds", []):
-                        next_ent["sound"].add(s)
-                    next_ent["brand"] |= brands_found
+            # in-market keeper -> seed the next layer + register its brands (no global drift)
+            for b in summ.get("brands", []):
+                bh = (b or "").lstrip("@")
+                if 2 <= len(bh) <= 30:
+                    brands_found.add(bh)
+            if depth + 1 < args.depth:
+                for t in summ.get("hashtags", []):
+                    next_ent["hashtag"].add(t)
+                for s in summ.get("sounds", []):
+                    next_ent["sound"].add(s)
+                next_ent["brand"] |= brands_found
             if kept % 20 == 0:
                 supa.flush_spend(channel="crawl")
                 print(f"  kept={kept} queue={len(q)} spent=${supa.total_spent() - start:.2f}/"

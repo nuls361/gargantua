@@ -165,6 +165,12 @@ class Supa:
     def upsert_stub(self, c: dict) -> bool:
         return bool(self.upsert_stubs([c]))
 
+    def delete_creator(self, sec_uid: str) -> None:
+        """Remove a creator that failed the hard criteria (market / ER only known post-enrich)."""
+        r = self.s.delete(f"{self.url}/tt_creators", params={"sec_uid": f"eq.{sec_uid}"},
+                          timeout=self.timeout)
+        r.raise_for_status()
+
     def update_creator(self, sec_uid: str, fields: dict) -> None:
         """Targeted UPDATE that preserves unnamed columns (so enriching a stub keeps its
         source tags). Mirrors db.DB.update_creator."""
