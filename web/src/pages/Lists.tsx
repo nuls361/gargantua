@@ -294,6 +294,7 @@ function ListDetail({ id }: { id: string }) {
           <option value="">All markets</option>
           <option value="dach">DACH</option>
           <option value="uk">UK</option>
+          <option value="us">US</option>
         </select>
         <select value={fEmail} onChange={(e) => setFEmail(e.target.value)}>
           <option value="">Email any</option>

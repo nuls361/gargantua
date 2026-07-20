@@ -245,6 +245,7 @@ export default function Search() {
           <option value="">All markets</option>
           <option value="dach">DACH</option>
           <option value="uk">UK</option>
+          <option value="us">US</option>
           <option value="other">Other</option>
         </select>
         <select value={sourceType} onChange={(e) => setSourceType(e.target.value)}>

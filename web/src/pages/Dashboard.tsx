@@ -17,7 +17,7 @@ export default function Dashboard() {
   const [chartLoading, setChartLoading] = useState(true);
   const [topics, setTopics] = useState<{ topic: string; n: number }[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(true);
-  const [pool, setPool] = useState<{ total: number; dach: number; uk: number } | null>(null);
+  const [pool, setPool] = useState<{ total: number; dach: number; uk: number; us: number } | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -33,12 +33,13 @@ export default function Dashboard() {
 
     // The harvested creator pool (tt_creators) — this is what grows as the scraper runs.
     void (async () => {
-      const [tRes, dRes, uRes] = await Promise.all([
+      const [tRes, dRes, uRes, usRes] = await Promise.all([
         supabase.from("tt_creators").select("sec_uid", { count: "exact", head: true }),
         supabase.from("tt_creators").select("sec_uid", { count: "exact", head: true }).eq("market", "dach"),
         supabase.from("tt_creators").select("sec_uid", { count: "exact", head: true }).eq("market", "uk"),
+        supabase.from("tt_creators").select("sec_uid", { count: "exact", head: true }).eq("market", "us"),
       ]);
-      setPool({ total: tRes.count ?? 0, dach: dRes.count ?? 0, uk: uRes.count ?? 0 });
+      setPool({ total: tRes.count ?? 0, dach: dRes.count ?? 0, uk: uRes.count ?? 0, us: usRes.count ?? 0 });
     })();
 
     void (async () => {
@@ -80,6 +81,10 @@ export default function Dashboard() {
         <div className="stat" style={{ padding: "24px 22px" }}>
           <div className="lbl" style={{ fontSize: 14 }}>UK</div>
           <div style={{ fontSize: 44, fontWeight: 800, marginTop: 6, letterSpacing: "-0.02em" }}>{fmt(pool?.uk ?? null)}</div>
+        </div>
+        <div className="stat" style={{ padding: "24px 22px" }}>
+          <div className="lbl" style={{ fontSize: 14 }}>US</div>
+          <div style={{ fontSize: 44, fontWeight: 800, marginTop: 6, letterSpacing: "-0.02em" }}>{fmt(pool?.us ?? null)}</div>
         </div>
       </div>
 
