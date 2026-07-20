@@ -21,7 +21,8 @@ from ig_provider import IGProvider
 from provider import ProviderError
 import ig_parse as igp
 import ig_enrich as ige
-from crawl import MIN_FOLLOWERS, MAX_FOLLOWERS, MARKETS, ER_MIN, ER_MAX, MAX_CANDIDATES_PER_SOURCE
+from crawl import (MIN_FOLLOWERS_BRAND, MAX_FOLLOWERS_BRAND, MARKETS, ER_MIN, ER_MAX,
+                   MAX_CANDIDATES_PER_SOURCE)
 
 
 def _tiktok_market(supa, tt_handle):
@@ -52,8 +53,8 @@ def ig_harvest_brand(supa, prov, brand_handle, *, brand_market="dach", log=print
             continue
         fol = pf.get("followers") or 0
         email = pf.get("email")
-        # HARD: e-mail + 1k–250k (pre-enrich)
-        if not email or not (MIN_FOLLOWERS <= fol <= MAX_FOLLOWERS):
+        # HARD: e-mail + 0–500k (brand-tagged = pre-validated by the brand)
+        if not email or not (MIN_FOLLOWERS_BRAND <= fol <= MAX_FOLLOWERS_BRAND):
             continue
         tt_mkt = _tiktok_market(supa, pf.get("tiktok_in_bio"))
         try:

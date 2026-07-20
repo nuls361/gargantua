@@ -35,8 +35,18 @@ from repost_harvest import harvest_brand, region_from_email
 # ---- hard filters (the single definition, used everywhere) ------------------
 MIN_FOLLOWERS = 1_000
 MAX_FOLLOWERS = 250_000
+# Brand sources: taggers/reposters are pre-validated BY the brand, so the follower band
+# is wider (0–500k) — a brand collab is itself the quality signal.
+MIN_FOLLOWERS_BRAND = 0
+MAX_FOLLOWERS_BRAND = 500_000
 MARKETS = ("dach", "uk", "us")          # target countries
 ER_MIN, ER_MAX = 2, 14                   # engagement-rate band (%)
+
+
+def follower_band(source_type: str) -> tuple[int, int]:
+    if source_type == "brand":
+        return MIN_FOLLOWERS_BRAND, MAX_FOLLOWERS_BRAND
+    return MIN_FOLLOWERS, MAX_FOLLOWERS
 MAX_CANDIDATES_PER_SOURCE = 80           # keepers enriched per source (breadth guard)
 NEXT_CAP = {"hashtag": 20, "sound": 12, "brand": 12}
 FUNDS_MARKERS = ("insufficient", "balance", "quota", "402", "payment", "not enough", "credit")
@@ -160,8 +170,9 @@ def process_source(supa, prov, enr, stype, sval, *, depth, max_depth, pages,
             if not c.get("email"):
                 c["email"] = parse.email_from_bio(pf.get("bio", ""))
 
-        # HARD FILTER 1: followers 1k–250k (pre-enrich, cheap)
-        if not isinstance(fol, int) or not (MIN_FOLLOWERS <= fol <= MAX_FOLLOWERS):
+        # HARD FILTER 1: followers (brand sources 0–500k pre-validated, else 1k–250k)
+        lo, hi = follower_band(stype)
+        if not isinstance(fol, int) or not (lo <= fol <= hi):
             continue
         # HARD FILTER 2: E-MAIL required (pre-enrich -> never pay to enrich a dead-end)
         email = c.get("email")
