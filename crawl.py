@@ -133,7 +133,15 @@ def run(budget: float = 36.0, depth: int = 3, pages: int = 6):
                     seeds.append((t, v.strip()))
     else:
         seeds = SEEDS
-    print(f"[crawl] seeds: " + ", ".join(f"{t}:{v}" for t, v in seeds), flush=True)
+    # Parallel speed-up: run N processes, each taking every Nth seed (disjoint sets).
+    # CRAWL_SHARDS=4 + CRAWL_SHARD=0..3. upsert dedupes if two shards ever overlap.
+    shards = int(os.environ.get("CRAWL_SHARDS", "1"))
+    shard = int(os.environ.get("CRAWL_SHARD", "0"))
+    if shards > 1:
+        seeds = [s for i, s in enumerate(seeds) if i % shards == shard]
+    print(f"[crawl] seeds: {len(seeds)}"
+          + (f" (shard {shard}/{shards})" if shards > 1 else "")
+          + " -> " + ", ".join(f"{t}:{v}" for t, v in seeds[:8]) + ("…" if len(seeds) > 8 else ""), flush=True)
 
     q = deque((st, sv, 0) for st, sv in seeds)
     seen_sources = {norm(st, sv) for st, sv, _ in q}
