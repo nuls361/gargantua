@@ -14,6 +14,7 @@ Runs until --depth layers deep OR TikHub funds run out. Metered; budget is a har
 from __future__ import annotations
 
 import argparse
+import os
 import time
 from collections import deque
 
@@ -113,7 +114,22 @@ def run(budget: float = 36.0, depth: int = 3, pages: int = 6):
                    max_pages=4, min_posts=12)
     meter = lambda: supa.record_spend("crawl", 0.001)
 
-    q = deque((st, sv, 0) for st, sv in SEEDS)
+    # Seeds: CRAWL_SEEDS env ("brand:larocheposay,hashtag:hautpflege,sound:123…") overrides
+    # the default sound seeds, so a DACH run can start from the German brands instead.
+    seed_env = os.environ.get("CRAWL_SEEDS", "").strip()
+    if seed_env:
+        seeds = []
+        for tok in seed_env.split(","):
+            tok = tok.strip()
+            if ":" in tok:
+                t, v = tok.split(":", 1)
+                if t in ("brand", "hashtag", "sound", "creator") and v.strip():
+                    seeds.append((t, v.strip()))
+    else:
+        seeds = SEEDS
+    print(f"[crawl] seeds: " + ", ".join(f"{t}:{v}" for t, v in seeds), flush=True)
+
+    q = deque((st, sv, 0) for st, sv in seeds)
     seen_sources = {norm(st, sv) for st, sv, _ in q}
     processed = load_existing_handles(supa)
     print(f"[crawl] start_spend=${start:.3f} budget=+${args.budget:.2f} depth={args.depth} "
@@ -154,6 +170,11 @@ def run(budget: float = 36.0, depth: int = 3, pages: int = 6):
             if not sec or not h or h.lower() in processed:
                 continue
             processed.add(h.lower())
+
+            # Sound authors carry a free region/language signal -> pre-filter to DACH
+            # BEFORE spending a profile call (same gate as channels.run_sound_job).
+            if stype == "sound" and not is_dach_author(c):
+                continue
 
             fol = c.get("followers")
             if fol is None:                      # sound authors carry no follower stat
@@ -210,8 +231,9 @@ def run(budget: float = 36.0, depth: int = 3, pages: int = 6):
 
             kept += 1
             src_kept += 1
-            if summ:
-                # brands in sponsored captions -> register in the Brands view (any depth)
+            # Only DACH/UK keepers seed the next layer + the Brands view -> the snowball
+            # stays in-market instead of drifting global (this was the €-eating bug).
+            if summ and summ.get("market") in ("dach", "uk"):
                 for b in summ.get("brands", []):
                     bh = (b or "").lstrip("@")
                     if 2 <= len(bh) <= 30:
