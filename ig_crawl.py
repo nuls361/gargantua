@@ -12,6 +12,7 @@ else caption language, else the seed brand's market.
 """
 from __future__ import annotations
 
+import os
 import sys
 import time
 
@@ -93,13 +94,44 @@ def ig_harvest_brand(supa, prov, brand_handle, *, brand_market="dach", log=print
     return {"kept": kept, "brand_followers": bf.get("followers"), "tagged": len(authors)}
 
 
+def run_ig(budget: float = 15.0, log=print) -> dict:
+    """Batch: harvest all DACH IG-brands (brands.instagram_handle) with sharding +
+    budget governor. CRAWL_SHARDS/CRAWL_SHARD split the seeds across parallel processes."""
+    supa = Supa()
+    start = supa.total_spent()
+    prov = IGProvider(meter=lambda: supa.record_spend("ig", 0.001))
+    brows = supa._get("brands", {"select": "instagram_handle", "instagram_handle": "not.is.null",
+                                 "market": "eq.dach", "limit": "3000"})
+    seeds = [(r.get("instagram_handle") or "").lstrip("@") for r in brows if r.get("instagram_handle")]
+    shards = int(os.environ.get("CRAWL_SHARDS", "1"))
+    shard = int(os.environ.get("CRAWL_SHARD", "0"))
+    if shards > 1:
+        seeds = [x for i, x in enumerate(seeds) if i % shards == shard]
+    log(f"[ig] seeds: {len(seeds)}" + (f" (shard {shard}/{shards})" if shards > 1 else ""))
+    kept, t0 = 0, time.time()
+    for ig in seeds:
+        if supa.total_spent() - start >= budget:
+            log("[ig] budget reached"); break
+        try:
+            k = ig_harvest_brand(supa, prov, ig, brand_market="dach", log=log).get("kept", 0)
+        except Exception as e:
+            k = 0; log(f"  @{ig}: {str(e)[:50]}")
+        kept += k
+        supa.flush_spend(channel="ig")
+        log(f"[ig] @{ig} -> +{k} | total {kept} | ${supa.total_spent() - start:.2f}")
+    supa.flush_spend(channel="ig")
+    log(f"[ig] DONE kept={kept} spent=${supa.total_spent() - start:.2f} time={(time.time() - t0) / 60:.1f}m")
+    return {"kept": kept}
+
+
 def main():
-    brand = sys.argv[1] if len(sys.argv) > 1 else "@paulaschoice"
-    supa, prov = Supa(), IGProvider()
-    t0 = time.time()
-    print(f"[ig] harvesting brand {brand} …", flush=True)
-    stats = ig_harvest_brand(supa, prov, brand, brand_market="uk")
-    print(f"[ig] DONE {stats} time={(time.time()-t0)/60:.1f}m", flush=True)
+    # single brand: `ig_crawl.py @handle` ; batch over DACH IG-brands: `ig_crawl.py --all [budget]`
+    if len(sys.argv) > 1 and sys.argv[1] != "--all":
+        supa, prov = Supa(), IGProvider()
+        print(f"[ig] harvesting brand {sys.argv[1]} …", flush=True)
+        print(f"[ig] DONE {ig_harvest_brand(supa, prov, sys.argv[1], brand_market='dach')}", flush=True)
+    else:
+        run_ig(budget=float(sys.argv[2]) if len(sys.argv) > 2 else 15.0)
 
 
 if __name__ == "__main__":

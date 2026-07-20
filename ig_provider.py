@@ -28,11 +28,12 @@ class IGProvider:
     EP_HASHTAG = "/api/v1/instagram/v1/fetch_hashtag_posts"
     MAX_RETRIES = 4
 
-    def __init__(self, api_key: str | None = None, timeout: int = 40):
+    def __init__(self, api_key: str | None = None, timeout: int = 40, meter=None):
         self.api_key = api_key or os.environ.get("TIKHUB_API_KEY")
         if not self.api_key:
             raise ProviderError("TIKHUB_API_KEY not set")
         self.timeout = timeout
+        self.meter = meter          # called once per charged call (for the budget ledger)
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {self.api_key}",
@@ -61,6 +62,8 @@ class IGProvider:
             code = body.get("code") if isinstance(body, dict) else None
             if code not in (None, 200, 0):
                 last = f"envelope {code}: {str(body.get('message'))[:120]}"; time.sleep(1.5 * (attempt + 1)); continue
+            if self.meter:
+                self.meter()
             return body
         raise ProviderError(f"{path} failed after {self.MAX_RETRIES} tries -- {last}")
 
