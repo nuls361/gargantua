@@ -20,6 +20,11 @@ type Row = {
 
 type SortKey = "creators_found" | "creators_dach" | "creators_uk" | "creators_enriched";
 
+type SourceCreator = {
+  sec_uid: string; handle: string; follower_count: number | null;
+  engagement_median: number | null; market: string | null; email: string | null; category: string | null;
+};
+
 const TYPE_LABEL: Record<SourceType, string> = {
   brand: "Brand", hashtag: "Hashtag", sound: "Sound", creator: "Creator",
 };
@@ -58,10 +63,25 @@ export default function Harvest() {
   const [newType, setNewType] = useState<SourceType>("hashtag");
   const [newVal, setNewVal] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [viewSrc, setViewSrc] = useState<Row | null>(null);
+  const [viewRows, setViewRows] = useState<SourceCreator[]>([]);
+  const [viewLoading, setViewLoading] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? ""));
   }, []);
+
+  // Click a source -> the creators that came in through it.
+  useEffect(() => {
+    if (!viewSrc) return;
+    setViewLoading(true);
+    setViewRows([]);
+    supabase.from("tt_creators")
+      .select("sec_uid,handle,follower_count,engagement_median,market,email,category")
+      .eq("source_value", viewSrc.source_value)
+      .order("follower_count", { ascending: false }).limit(300)
+      .then(({ data }) => { setViewRows((data ?? []) as SourceCreator[]); setViewLoading(false); });
+  }, [viewSrc]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -199,7 +219,12 @@ export default function Harvest() {
             ) : (
               visible.map((r) => (
                 <tr key={`${r.source_type}:${r.source_value}`}>
-                  <td style={{ fontWeight: 600 }}>{displayValue(r.source_type, r.source_value)}</td>
+                  <td style={{ fontWeight: 600 }}>
+                    <button type="button" onClick={() => setViewSrc(r)} title="Creator dieser Quelle anzeigen"
+                      style={{ background: "none", border: "none", padding: 0, color: "var(--accent)", cursor: "pointer", font: "inherit", fontWeight: 600 }}>
+                      {displayValue(r.source_type, r.source_value)}
+                    </button>
+                  </td>
                   <td><span className={`pill ${TYPE_CLS[r.source_type]}`}>{TYPE_LABEL[r.source_type]}</span></td>
                   <td style={{ textAlign: "center" }} className="num">{r.creators_found || "—"}</td>
                   <td style={{ textAlign: "center" }} className="num">{r.creators_dach || "—"}</td>
@@ -220,6 +245,47 @@ export default function Harvest() {
           </tbody>
         </table>
       </div>
+
+      {viewSrc && (
+        <div onClick={() => setViewSrc(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} className="panel" style={{ width: "min(900px, 94vw)", maxHeight: "84vh", overflow: "auto", padding: 18 }}>
+            <div className="toolbar" style={{ margin: 0, marginBottom: 10 }}>
+              <h3 style={{ margin: 0 }}>{displayValue(viewSrc.source_type, viewSrc.source_value)}</h3>
+              <span className={`pill ${TYPE_CLS[viewSrc.source_type]}`}>{TYPE_LABEL[viewSrc.source_type]}</span>
+              <span className="muted" style={{ fontSize: 13 }}>{viewRows.length} Creator</span>
+              <div className="grow" />
+              <button onClick={() => setViewSrc(null)}>Schließen</button>
+            </div>
+            {viewLoading ? (
+              <div className="center-loading">Lädt…</div>
+            ) : viewRows.length === 0 ? (
+              <p className="muted">Noch keine Creator von dieser Quelle.</p>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead><tr>
+                    <th>Creator</th><th style={{ textAlign: "right" }}>Follower</th>
+                    <th style={{ textAlign: "right" }}>ER</th><th>Topic</th><th>Markt</th><th>Email</th>
+                  </tr></thead>
+                  <tbody>
+                    {viewRows.map((c) => (
+                      <tr key={c.sec_uid}>
+                        <td><a href={`https://www.tiktok.com/@${c.handle}`} target="_blank" rel="noreferrer" style={{ fontWeight: 600 }}>@{c.handle}</a></td>
+                        <td className="num" style={{ textAlign: "right" }}>{c.follower_count?.toLocaleString("en-GB") ?? "—"}</td>
+                        <td className="num" style={{ textAlign: "right" }}>{c.engagement_median != null ? `${c.engagement_median}%` : "—"}</td>
+                        <td>{c.category ?? "—"}</td>
+                        <td className="muted" style={{ textTransform: "uppercase", fontSize: 12 }}>{c.market ?? "—"}</td>
+                        <td style={{ fontSize: 13 }}>{c.email ? <a href={`mailto:${c.email}`}>{c.email}</a> : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
