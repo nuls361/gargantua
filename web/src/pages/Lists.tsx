@@ -150,8 +150,13 @@ function ListDetail({ id }: { id: string }) {
   useEffect(() => { void loadStats(); }, [loadStats]);
   useEffect(() => { void loadPage(); }, [loadPage]);
   useEffect(() => {
-    supabase.from("campaigns").select("*").order("name")
-      .then(({ data }) => setCampaigns((data ?? []) as Campaign[]));
+    void (async () => {
+      // Pull the latest Instantly campaigns first so the send-dropdown is current
+      // (best-effort; the campaigns table still loads even if the sync hiccups).
+      try { await supabase.functions.invoke("sync-campaigns", { body: {} }); } catch { /* ignore */ }
+      const { data } = await supabase.from("campaigns").select("*").order("name");
+      setCampaigns((data ?? []) as Campaign[]);
+    })();
   }, []);
 
   const refresh = useCallback(async () => {
