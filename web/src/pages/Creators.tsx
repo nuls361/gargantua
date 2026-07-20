@@ -205,7 +205,8 @@ export default function Search() {
         if (error) throw error;
         inserted += data?.length ?? 0;
       }
-      setNotice(`${inserted} creators saved to “${listName}”${src.length - fresh.length > 0 ? ` · ${src.length - fresh.length} duplicates skipped` : ""}. Open “Lists” to send to Instantly.`);
+      const skipped = src.length - inserted;   // handle-in-CRM + duplicate-email, combined
+      setNotice(`${inserted} creators saved to “${listName}”${skipped > 0 ? ` · ${skipped} skipped (already in CRM or duplicate email)` : ""}. Open “Lists” to send to Instantly.`);
       setSelected(new Set());
       setShowSource(false);
       loadLists();
