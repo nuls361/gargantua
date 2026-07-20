@@ -240,7 +240,7 @@ def run(budget: float = 36.0, depth: int = 3, pages: int = 6):
             # again so the pool only ever holds creators that match all three.
             mkt = summ.get("market") if summ else None
             er = summ.get("engagement_median") if summ else None
-            if mkt not in ("dach", "uk") or not isinstance(er, (int, float)) or not (2 <= er <= 14):
+            if mkt not in ("dach", "uk", "us") or not isinstance(er, (int, float)) or not (2 <= er <= 14):
                 try:
                     supa.delete_creator(sec)
                 except Exception:

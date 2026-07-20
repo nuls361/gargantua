@@ -320,6 +320,8 @@ class Enricher:
             market = "dach"
         elif country in ("GB", "UK"):
             market = "uk"
+        elif country in ("US", "USA"):
+            market = "us"
         else:
             market = "other"
 
