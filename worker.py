@@ -14,7 +14,7 @@ import sys
 import time
 
 from store import Supa
-from channels import DISPATCH
+from crawl import harvest_one
 
 POLL_SECONDS = int(os.environ.get("WORKER_POLL_SECONDS", "15"))
 DAILY_CAP_USD = float(os.environ.get("AUTONOMOUS_DAILY_USD", "0"))   # 0 = autonomous off
@@ -41,18 +41,16 @@ def _sleep(seconds: int):
 def _run_job(supa, prov, job):
     jid, st, sv = job["id"], job["source_type"], job["source_value"]
     print(f"[worker] job #{jid} start — {st}={sv} opts={job.get('options')}", flush=True)
-    fn = DISPATCH.get(st)
-    if not fn:
-        supa.finish_job(jid, {}, status="error", error=f"no channel for source_type={st}")
-        print(f"[worker] job #{jid} error — no channel for {st}", flush=True)
+    if st not in ("brand", "hashtag", "sound", "creator"):
+        supa.finish_job(jid, {}, status="error", error=f"unknown source_type={st}")
+        print(f"[worker] job #{jid} error — unknown source_type {st}", flush=True)
         return
     try:
-        stats = fn(prov, supa, job, log=lambda m: print(m, flush=True))
-        supa.flush_spend(jid, channel=st)
+        # ONE code path (crawl.harvest_one) -> same hard filters as the batch crawl.
+        stats = harvest_one(st, sv, job.get("options"), log=lambda m: print(m, flush=True))
         supa.finish_job(jid, stats, status="done")
         print(f"[worker] job #{jid} done — {stats}", flush=True)
     except Exception as e:
-        supa.flush_spend(jid, channel=st)
         supa.finish_job(jid, {}, status="error", error=str(e)[:500])
         print(f"[worker] job #{jid} FAILED — {type(e).__name__}: {e}", flush=True)
 

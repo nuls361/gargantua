@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """
-3-layer recursive discovery crawl.
+The scraper. ONE source of truth for harvest + qualify + enrich.
 
-Seeds (L1): the sounds + hashtag given. Each layer:
-  harvest a source -> creators -> qualify + enrich the keepers (into tt_creators,
-  topic-tagged, source-tagged) -> collect each keeper's hashtags / sounds / brands ->
-  those become the NEXT layer's sources (deduped globally).
-Runs until --depth layers deep OR TikHub funds run out. Metered; budget is a hard ceiling.
+`process_source()` takes a single source (brand / hashtag / sound / creator), harvests
+its creators and applies ALL hard filters in one place:
+    E-MAIL required · followers 1k–250k · market DACH/UK/US · engagement 2–14%
+Anything failing is never stored (or deleted if it only reveals itself post-enrich), so
+the pool ONLY ever holds bookable creators. Keepers get Attio-reconciled (WePush flag).
+
+Two entry points, same core (no duplicated logic):
+  - run()        : batch / recursive crawl (BFS over sources, optional sharding). CLI + CRAWL=1.
+  - harvest_one(): one source for the reactive Railway worker (a scrape_jobs row).
 
     SUPABASE_URL=.. SUPABASE_SECRET_KEY=.. TIKHUB_API_KEY=.. \
-        python3 crawl.py --budget 38 --depth 3
+        python3 crawl.py --budget 38 --depth 2
 """
 from __future__ import annotations
 
@@ -23,23 +27,21 @@ import freemail
 from provider import TikHubProvider, ProviderError
 from store import Supa
 from enrich import Enricher, BudgetExceeded
-from sound_harvest import harvest_sound, is_dach_author
+from sound_harvest import harvest_sound, resolve_music_id, is_dach_author
 from hashtag_harvest import harvest_hashtag
 from creator_harvest import harvest_creator
 from repost_harvest import harvest_brand, region_from_email
 
-MIN_FOLLOWERS = 1000
-MAX_FOLLOWERS = 250_000              # bookable tier ceiling (same as channels/enrich)
-MAX_CANDIDATES_PER_SOURCE = 80       # keepers enriched per source (breadth guard)
-NEXT_CAP = {"hashtag": 20, "sound": 12, "brand": 12}   # entities pushed to next layer / source
+# ---- hard filters (the single definition, used everywhere) ------------------
+MIN_FOLLOWERS = 1_000
+MAX_FOLLOWERS = 250_000
+MARKETS = ("dach", "uk", "us")          # target countries
+ER_MIN, ER_MAX = 2, 14                   # engagement-rate band (%)
+MAX_CANDIDATES_PER_SOURCE = 80           # keepers enriched per source (breadth guard)
+NEXT_CAP = {"hashtag": 20, "sound": 12, "brand": 12}
 FUNDS_MARKERS = ("insufficient", "balance", "quota", "402", "payment", "not enough", "credit")
 
-SEEDS = [
-    ("sound", "7608801818244270862"),
-    ("sound", "7283953439722801952"),
-    ("sound", "7640189670659312417"),
-    ("hashtag", "coolgirlvibe"),
-]
+SEEDS = [("hashtag", "coolgirlvibe")]    # default only; real runs pass CRAWL_SEEDS / seeds=
 
 
 def is_funds_error(e) -> bool:
@@ -76,12 +78,11 @@ def harvest_for(prov, stype, value, pages, meter):
 
 
 def _retry(fn, tries=5, base=2.0):
-    """Transient network/DB blips are normal on a long run -- retry with backoff."""
     last = None
     for i in range(tries):
         try:
             return fn()
-        except Exception as e:  # noqa: BLE001 - deliberately broad (network layer)
+        except Exception as e:  # noqa: BLE001 - network layer
             last = e
             time.sleep(base * (i + 1))
     raise last
@@ -101,212 +102,239 @@ def load_existing_handles(supa: Supa) -> set:
     return out
 
 
-def run(budget: float = 36.0, depth: int = 3, pages: int = 6):
-    """3-layer recursive crawl. Callable from the Railway worker (CRAWL=1) or the CLI."""
-    class _A:
-        pass
-    args = _A()
-    args.budget, args.depth, args.pages = budget, depth, pages
+def _attio_reconcile(supa, keepers, log):
+    """Flag kept creators that are already WePush users (needs ATTIO_API_KEY). Best-effort."""
+    if not os.environ.get("ATTIO_API_KEY") or not keepers:
+        return
+    try:
+        from reconcile_attio import reconcile_batch
+        n = reconcile_batch(supa, {c["handle"]: c["sec_uid"] for c in keepers if c.get("handle")})
+        if n:
+            log(f"  attio: {n} already WePush users")
+    except Exception as e:
+        log(f"  attio reconcile skipped: {str(e)[:60]}")
 
+
+class _Stop(Exception):
+    """Raised to abort the whole run (budget/funds exhausted)."""
+
+
+def process_source(supa, prov, enr, stype, sval, *, depth, max_depth, pages,
+                   processed, meter, over_budget, log):
+    """Harvest ONE source, apply all hard filters, store keepers, return
+    (src_kept, next_entities, brands_found). Raises _Stop when budget/funds run out."""
+    cands = harvest_for(prov, stype, sval, pages, meter)
+
+    next_ent = {"hashtag": set(), "sound": set(), "brand": set()}
+    brands_found = set()
+    keepers = []
+    for c in cands:
+        if len(keepers) >= MAX_CANDIDATES_PER_SOURCE:
+            break
+        if over_budget():
+            raise _Stop()
+        sec, h = c.get("sec_uid"), c.get("handle")
+        if not sec or not h or h.lower() in processed:
+            continue
+        processed.add(h.lower())
+
+        # sounds carry a free region signal -> pre-filter to DACH before a profile call
+        if stype == "sound" and not is_dach_author(c):
+            continue
+
+        fol = c.get("followers")
+        if fol is None:                     # sound authors have no inline follower count
+            try:
+                prof = enr._call(lambda hh=h: prov.fetch_profile(hh), "profile")
+            except BudgetExceeded:
+                raise _Stop()
+            except ProviderError as e:
+                if is_funds_error(e):
+                    raise _Stop()
+                continue
+            except Exception:
+                continue
+            pf = parse.profile_fields(prof)
+            fol = pf.get("followers")
+            c["bio"] = c.get("bio") or pf.get("bio")
+            if not c.get("email"):
+                c["email"] = parse.email_from_bio(pf.get("bio", ""))
+
+        # HARD FILTER 1: followers 1k–250k (pre-enrich, cheap)
+        if not isinstance(fol, int) or not (MIN_FOLLOWERS <= fol <= MAX_FOLLOWERS):
+            continue
+        # HARD FILTER 2: E-MAIL required (pre-enrich -> never pay to enrich a dead-end)
+        email = c.get("email")
+        if not email:
+            continue
+
+        bio = c.get("bio") or ""
+        region = region_from_email(email) or ("dach" if (stype == "sound" and is_dach_author(c)) else None)
+        stag = source_tag(stype, sval)
+        try:
+            _retry(lambda: supa.upsert_stubs([{
+                "sec_uid": sec, "handle": h, "display_name": c.get("nickname"),
+                "bio": bio, "follower_count": fol, "verified": bool(c.get("verified")),
+                "email": email, "email_source": "bio_regex",
+                "email_type": freemail.classify_email(email),
+                "source_channel": stype, "source_brand": sval.lstrip("@") if stype == "brand" else None,
+                "source_type": stype, "source_value": stag,
+                "region_hint": region, "enrichment_status": "stub",
+                "discovered_via": stype, "discovered_from": stag,
+            }]))
+            _retry(lambda: supa.add_creator_sources([{
+                "sec_uid": sec, "source_type": stype, "source_value": stag}]))
+        except Exception:
+            continue
+
+        try:
+            _, _outcome, summ = enr.enrich_from_stub({
+                "sec_uid": sec, "handle": h, "follower_count": fol, "region_hint": region,
+                "email": email, "bio": bio,
+                "source_brand": sval.lstrip("@") if stype == "brand" else None})
+        except BudgetExceeded:
+            raise _Stop()
+        except ProviderError as e:
+            if is_funds_error(e):
+                raise _Stop()
+            continue
+        except Exception:
+            continue
+
+        # HARD FILTER 3+4: market DACH/UK/US AND ER 2–14% (only known post-enrich) -> else delete
+        mkt = summ.get("market") if summ else None
+        er = summ.get("engagement_median") if summ else None
+        if mkt not in MARKETS or not isinstance(er, (int, float)) or not (ER_MIN <= er <= ER_MAX):
+            try:
+                supa.delete_creator(sec)
+            except Exception:
+                pass
+            continue
+
+        keepers.append({"sec_uid": sec, "handle": h})
+        for b in summ.get("brands", []):
+            bh = (b or "").lstrip("@")
+            if 2 <= len(bh) <= 30:
+                brands_found.add(bh)
+        if depth + 1 < max_depth:
+            next_ent["hashtag"].update(summ.get("hashtags", []))
+            next_ent["sound"].update(summ.get("sounds", []))
+            next_ent["brand"].update(brands_found)
+
+    # Attio: flag keepers already in WePush
+    _attio_reconcile(supa, keepers, log)
+    # register brands seen in captions (idempotent)
+    if brands_found:
+        try:
+            _retry(lambda: supa._insert(
+                "brands", [{"handle": "@" + b, "status": "candidate", "discovered_via": "crawl"}
+                           for b in brands_found],
+                on_conflict="handle", resolution="ignore"))
+        except Exception:
+            pass
+    return len(keepers), next_ent, brands_found
+
+
+def run(budget=36.0, depth=2, pages=6, seeds=None, log=print) -> dict:
+    """Batch / recursive crawl. `seeds` = list of (type, value); if None, read CRAWL_SEEDS
+    env (supports `brands:dach|dachuk`) or the default. Optional sharding via CRAWL_SHARDS."""
     supa = Supa()
     prov = TikHubProvider()
     start = supa.total_spent()
-    enr = Enricher(prov, supa, budget_usd=start + args.budget, max_harvest_followers=250_000,
+    enr = Enricher(prov, supa, budget_usd=start + budget, max_harvest_followers=MAX_FOLLOWERS,
                    max_pages=4, min_posts=12)
     meter = lambda: supa.record_spend("crawl", 0.001)
 
-    # Seeds: CRAWL_SEEDS env ("brand:larocheposay,hashtag:hautpflege,sound:123…") overrides
-    # the default sound seeds, so a DACH run can start from the German brands instead.
-    seed_env = os.environ.get("CRAWL_SEEDS", "").strip()
-    if seed_env.startswith("brands:"):
-        # CRAWL_SEEDS=brands:dach | brands:dachuk -> load classified brands from the DB
-        markets = "dach,uk" if "uk" in seed_env.split(":", 1)[1] else "dach"
-        brows = supa._get("brands", {"select": "handle", "market": f"in.({markets})", "limit": "3000"})
-        seeds = [("brand", (r.get("handle") or "").lstrip("@")) for r in brows if r.get("handle")]
-    elif seed_env:
-        seeds = []
-        for tok in seed_env.split(","):
-            tok = tok.strip()
-            if ":" in tok:
-                t, v = tok.split(":", 1)
-                if t in ("brand", "hashtag", "sound", "creator") and v.strip():
-                    seeds.append((t, v.strip()))
-    else:
-        seeds = SEEDS
-    # Parallel speed-up: run N processes, each taking every Nth seed (disjoint sets).
-    # CRAWL_SHARDS=4 + CRAWL_SHARD=0..3. upsert dedupes if two shards ever overlap.
+    if seeds is None:
+        seed_env = os.environ.get("CRAWL_SEEDS", "").strip()
+        if seed_env.startswith("brands:"):
+            markets = "dach,uk" if "uk" in seed_env.split(":", 1)[1] else "dach"
+            brows = supa._get("brands", {"select": "handle", "market": f"in.({markets})", "limit": "5000"})
+            seeds = [("brand", (r.get("handle") or "").lstrip("@")) for r in brows if r.get("handle")]
+        elif seed_env:
+            seeds = []
+            for tok in seed_env.split(","):
+                if ":" in tok:
+                    t, v = tok.strip().split(":", 1)
+                    if t in ("brand", "hashtag", "sound", "creator") and v.strip():
+                        seeds.append((t, v.strip()))
+        else:
+            seeds = SEEDS
     shards = int(os.environ.get("CRAWL_SHARDS", "1"))
     shard = int(os.environ.get("CRAWL_SHARD", "0"))
     if shards > 1:
         seeds = [s for i, s in enumerate(seeds) if i % shards == shard]
-    print(f"[crawl] seeds: {len(seeds)}"
-          + (f" (shard {shard}/{shards})" if shards > 1 else "")
-          + " -> " + ", ".join(f"{t}:{v}" for t, v in seeds[:8]) + ("…" if len(seeds) > 8 else ""), flush=True)
+    log(f"[crawl] seeds: {len(seeds)}" + (f" (shard {shard}/{shards})" if shards > 1 else "")
+        + " -> " + ", ".join(f"{t}:{v}" for t, v in seeds[:8]) + ("…" if len(seeds) > 8 else ""))
 
     q = deque((st, sv, 0) for st, sv in seeds)
     seen_sources = {norm(st, sv) for st, sv, _ in q}
     processed = load_existing_handles(supa)
-    print(f"[crawl] start_spend=${start:.3f} budget=+${args.budget:.2f} depth={args.depth} "
-          f"seeds={len(q)} pool_known={len(processed)}", flush=True)
+    log(f"[crawl] start_spend=${start:.3f} budget=+${budget:.2f} depth={depth} "
+        f"seeds={len(q)} pool_known={len(processed)}")
+
+    def over_budget():
+        return supa.total_spent() - start >= budget
 
     kept = 0
-    stop = False
     t0 = time.time()
-
-    def over_budget() -> bool:
-        return supa.total_spent() - start >= args.budget
-
-    while q and not stop:
-        stype, sval, depth = q.popleft()
+    while q:
+        stype, sd, d = q.popleft()
         if over_budget():
-            print("[crawl] budget reached", flush=True)
-            break
+            log("[crawl] budget reached"); break
         try:
-            cands = harvest_for(prov, stype, sval, args.pages, meter)
+            src_kept, next_ent, _ = process_source(
+                supa, prov, enr, stype, sd, depth=d, max_depth=depth, pages=pages,
+                processed=processed, meter=meter, over_budget=over_budget, log=log)
+        except _Stop:
+            log("[crawl] budget/funds exhausted"); break
         except BudgetExceeded:
             break
         except ProviderError as e:
             if is_funds_error(e):
-                print(f"[crawl] funds out at harvest: {str(e)[:80]}", flush=True)
-                break
-            print(f"  L{depth} {source_tag(stype, sval)}: harvest err {str(e)[:50]}", flush=True)
-            continue
-
-        next_ent = {"hashtag": set(), "sound": set(), "brand": set()}
-        brands_found = set()          # every brand seen in a caption -> the Brands view
-        src_kept = 0
-        for c in cands:
-            if src_kept >= MAX_CANDIDATES_PER_SOURCE or over_budget():
-                if over_budget():
-                    stop = True
-                break
-            sec, h = c.get("sec_uid"), c.get("handle")
-            if not sec or not h or h.lower() in processed:
-                continue
-            processed.add(h.lower())
-
-            # Sound authors carry a free region/language signal -> pre-filter to DACH
-            # BEFORE spending a profile call (same gate as channels.run_sound_job).
-            if stype == "sound" and not is_dach_author(c):
-                continue
-
-            fol = c.get("followers")
-            if fol is None:                      # sound authors carry no follower stat
-                try:
-                    prof = enr._call(lambda hh=h: prov.fetch_profile(hh), "profile")
-                except BudgetExceeded:
-                    stop = True; break
-                except ProviderError as e:
-                    if is_funds_error(e):
-                        stop = True; break
-                    continue
-                except Exception:
-                    continue
-                pf = parse.profile_fields(prof)
-                fol = pf.get("followers")
-                c["bio"] = c.get("bio") or pf.get("bio")
-                if not c.get("email"):
-                    c["email"] = parse.email_from_bio(pf.get("bio", ""))
-            if not isinstance(fol, int) or not (MIN_FOLLOWERS <= fol <= MAX_FOLLOWERS):
-                continue
-
-            email = c.get("email")
-            bio = c.get("bio") or ""
-            region = region_from_email(email) or ("dach" if (stype == "sound" and is_dach_author(c)) else None)
-            try:
-                _retry(lambda: supa.upsert_stubs([{
-                    "sec_uid": sec, "handle": h, "display_name": c.get("nickname"),
-                    "bio": bio, "follower_count": fol, "verified": bool(c.get("verified")),
-                    "email": email, "email_source": "bio_regex" if parse.email_from_bio(bio) else ("crm" if email else None),
-                    "email_type": freemail.classify_email(email) if email else None,
-                    "source_channel": stype, "source_brand": sval.lstrip("@") if stype == "brand" else None,
-                    "source_type": stype, "source_value": source_tag(stype, sval),
-                    "region_hint": region, "enrichment_status": "stub",
-                    "discovered_via": stype, "discovered_from": source_tag(stype, sval),
-                }]))
-                _retry(lambda: supa.add_creator_sources([{
-                    "sec_uid": sec, "source_type": stype, "source_value": source_tag(stype, sval)}]))
-            except Exception:
-                continue
-
-            try:
-                _, _outcome, summ = enr.enrich_from_stub({
-                    "sec_uid": sec, "handle": h, "follower_count": fol, "region_hint": region,
-                    "email": email, "bio": bio,
-                    "source_brand": sval.lstrip("@") if stype == "brand" else None})
-            except BudgetExceeded:
-                stop = True; break
-            except ProviderError as e:
-                if is_funds_error(e):
-                    stop = True; break
-                continue
-            except Exception:
-                continue
-
-            # HARD criteria (market + ER are only known post-enrich): DACH/UK AND ER 2–14%.
-            # Followers were already gated 1k–250k pre-enrich. Anything failing is removed
-            # again so the pool only ever holds creators that match all three.
-            mkt = summ.get("market") if summ else None
-            er = summ.get("engagement_median") if summ else None
-            if mkt not in ("dach", "uk", "us") or not isinstance(er, (int, float)) or not (2 <= er <= 14):
-                try:
-                    supa.delete_creator(sec)
-                except Exception:
-                    pass
-                continue
-
-            kept += 1
-            src_kept += 1
-            # in-market keeper -> seed the next layer + register its brands (no global drift)
-            for b in summ.get("brands", []):
-                bh = (b or "").lstrip("@")
-                if 2 <= len(bh) <= 30:
-                    brands_found.add(bh)
-            if depth + 1 < args.depth:
-                for t in summ.get("hashtags", []):
-                    next_ent["hashtag"].add(t)
-                for s in summ.get("sounds", []):
-                    next_ent["sound"].add(s)
-                next_ent["brand"] |= brands_found
-            if kept % 20 == 0:
-                supa.flush_spend(channel="crawl")
-                print(f"  kept={kept} queue={len(q)} spent=${supa.total_spent() - start:.2f}/"
-                      f"{args.budget:.0f} ({(time.time() - t0) / 60:.0f}m)", flush=True)
-
-        # register every brand seen in a caption into the Brands view (idempotent)
-        if brands_found:
-            try:
-                _retry(lambda: supa._insert(
-                    "brands",
-                    [{"handle": "@" + b, "status": "candidate", "discovered_via": "crawl"}
-                     for b in brands_found],
-                    on_conflict="handle", resolution="ignore"))
-            except Exception:
-                pass
-
-        # enqueue the next layer (deduped, capped per type)
-        if depth + 1 < args.depth:
+                log(f"[crawl] funds out: {str(e)[:80]}"); break
+            log(f"  L{d} {source_tag(stype, sd)}: harvest err {str(e)[:50]}"); continue
+        kept += src_kept
+        if d + 1 < depth:
             for etype, vals in next_ent.items():
                 for v in list(vals)[:NEXT_CAP[etype]]:
                     key = norm(etype, v)
-                    if key in seen_sources:
-                        continue
-                    seen_sources.add(key)
-                    q.append((etype, v, depth + 1))
+                    if key not in seen_sources:
+                        seen_sources.add(key)
+                        q.append((etype, v, d + 1))
         supa.flush_spend(channel="crawl")
-        print(f"[L{depth}] {source_tag(stype, sval)} -> +{src_kept} kept | total {kept} | "
-              f"queue {len(q)} | ${supa.total_spent() - start:.2f}", flush=True)
+        log(f"[L{d}] {source_tag(stype, sd)} -> +{src_kept} kept | total {kept} | "
+            f"queue {len(q)} | ${supa.total_spent() - start:.2f}")
 
     supa.flush_spend(channel="crawl")
-    print(f"[crawl] DONE kept={kept} sources_seen={len(seen_sources)} "
-          f"spent=${supa.total_spent() - start:.2f} time={(time.time() - t0) / 60:.1f}m", flush=True)
+    stats = {"kept": kept, "sources_seen": len(seen_sources),
+             "spent_usd": round(supa.total_spent() - start, 4)}
+    log(f"[crawl] DONE {stats} time={(time.time() - t0) / 60:.1f}m")
+    return stats
+
+
+def harvest_one(source_type, source_value, options=None, *, log=print) -> dict:
+    """Reactive entry for the Railway worker: harvest ONE scrape_jobs source with the same
+    hard filters. Product harvests default to 2 levels deep (options.max_depth)."""
+    opts = options or {}
+    sv = source_value
+    if source_type == "sound":                 # resolve id/url/name up front
+        prov = TikHubProvider()
+        mid, _ = resolve_music_id(prov, source_value)
+        if not mid:
+            return {"kept": 0, "error": "could not resolve sound"}
+        sv = mid
+    return run(budget=float(opts.get("budget_usd", 2.0)),
+               depth=int(opts.get("max_depth", 2)),
+               pages=int(opts.get("pages", 6)),
+               seeds=[(source_type, sv)], log=log)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--budget", type=float, default=36.0, help="USD to spend this crawl")
-    ap.add_argument("--depth", type=int, default=3, help="layers of qualification")
-    ap.add_argument("--pages", type=int, default=6, help="harvest pages per source")
+    ap.add_argument("--budget", type=float, default=36.0)
+    ap.add_argument("--depth", type=int, default=2)
+    ap.add_argument("--pages", type=int, default=6)
     a = ap.parse_args()
     run(budget=a.budget, depth=a.depth, pages=a.pages)
 
