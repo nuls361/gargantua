@@ -171,6 +171,7 @@ function ListDetail({ id }: { id: string }) {
 
   const sourced = stats.status.sourced ?? 0;
   const enriched = stats.status.enriched ?? 0;
+  const sent = stats.status.in_instantly ?? 0;
 
   function flash(msg: string) {
     setNotice(msg);
@@ -189,12 +190,20 @@ function ListDetail({ id }: { id: string }) {
     await refresh();
   }
 
-  async function send() {
+  async function send(resend = false) {
     const camp = campaigns.find((c) => c.id === sendCampaign);
     if (!camp?.instantly_campaign_id) { setError("Choose a campaign with an Instantly campaign ID."); return; }
-    if (!window.confirm(`Send all ${enriched} enriched creators from “${list?.name}” to “${camp.name}”?`)) return;
+    const n = resend ? enriched + sent : enriched;
+    if (!window.confirm(`Send ${n} creators from “${list?.name}” to “${camp.name}”?${resend ? " (incl. already-sent — cooldown is only a guide)" : ""}`)) return;
     setWorking(true);
     setError(null);
+    // Resend: cooldown is only orientation — flip the already-sent creators back to
+    // 'enriched' so the existing push-function re-sends them (no edge-fn change needed).
+    if (resend && sent > 0) {
+      const { error: flipErr } = await supabase.from("creators")
+        .update({ status: "enriched" }).eq("list_id", id).eq("status", "in_instantly");
+      if (flipErr) { setWorking(false); setError(`Resend prep failed: ${flipErr.message}`); return; }
+    }
     const { data, error: err } = await supabase.functions.invoke("push-to-instantly", {
       body: { list_id: id, instantly_campaign_id: camp.instantly_campaign_id },
     });
@@ -257,9 +266,15 @@ function ListDetail({ id }: { id: string }) {
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
-            <button className={enriched > 0 && sendCampaign ? "primary" : ""} onClick={send} disabled={working || !sendCampaign || enriched === 0}>
+            <button className={enriched > 0 && sendCampaign ? "primary" : ""} onClick={() => send(false)} disabled={working || !sendCampaign || enriched === 0}>
               {working ? "Working…" : enriched > 0 ? `▶ Send ${enriched.toLocaleString("en-GB")} to Instantly` : "Nothing ready"}
             </button>
+            {sent > 0 && (
+              <button onClick={() => send(true)} disabled={working || !sendCampaign}
+                title="Cooldown ist nur Orientierung — erneut an die Kampagne senden">
+                ↻ Resend {sent.toLocaleString("en-GB")}
+              </button>
+            )}
           </div>
           {sourced > 0 && (
             <button className="link-btn" onClick={enrich} disabled={working} title="Pull profiles & clean emails for the raw creators">

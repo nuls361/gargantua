@@ -17,6 +17,7 @@ export default function Dashboard() {
   const [chartLoading, setChartLoading] = useState(true);
   const [topics, setTopics] = useState<{ topic: string; n: number }[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(true);
+  const [pool, setPool] = useState<{ total: number; dach: number; uk: number } | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -30,6 +31,16 @@ export default function Dashboard() {
       setTotal(totalRes.count ?? 0);
     })();
 
+    // The harvested creator pool (tt_creators) — this is what grows as the scraper runs.
+    void (async () => {
+      const [tRes, dRes, uRes] = await Promise.all([
+        supabase.from("tt_creators").select("sec_uid", { count: "exact", head: true }),
+        supabase.from("tt_creators").select("sec_uid", { count: "exact", head: true }).eq("market", "dach"),
+        supabase.from("tt_creators").select("sec_uid", { count: "exact", head: true }).eq("market", "uk"),
+      ]);
+      setPool({ total: tRes.count ?? 0, dach: dRes.count ?? 0, uk: uRes.count ?? 0 });
+    })();
+
     void (async () => {
       const { data } = await supabase.rpc("leads_by_day");
       setSeries(((data ?? []) as { day: string; n: number }[]).map((d) => ({ day: d.day, n: Number(d.n) })));
@@ -40,7 +51,7 @@ export default function Dashboard() {
       const counts = await Promise.all(
         TOPICS.map(async (t) => {
           const { count } = await supabase
-            .from("creators").select("id", { count: "exact", head: true }).eq("category", t);
+            .from("tt_creators").select("sec_uid", { count: "exact", head: true }).eq("category", t);
           return { topic: t, n: count ?? 0 };
         })
       );
@@ -56,7 +67,24 @@ export default function Dashboard() {
     <div>
       <h2>Dashboard</h2>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginTop: 8 }}>
+      <div className="nav-section" style={{ padding: "8px 0 6px" }}>Creator pool (harvested)</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
+        <div className="stat" style={{ padding: "24px 22px" }}>
+          <div className="lbl" style={{ fontSize: 14 }}>Creators in pool</div>
+          <div style={{ fontSize: 44, fontWeight: 800, marginTop: 6, letterSpacing: "-0.02em" }}>{fmt(pool?.total ?? null)}</div>
+        </div>
+        <div className="stat" style={{ padding: "24px 22px" }}>
+          <div className="lbl" style={{ fontSize: 14 }}>DACH</div>
+          <div style={{ fontSize: 44, fontWeight: 800, marginTop: 6, letterSpacing: "-0.02em" }}>{fmt(pool?.dach ?? null)}</div>
+        </div>
+        <div className="stat" style={{ padding: "24px 22px" }}>
+          <div className="lbl" style={{ fontSize: 14 }}>UK</div>
+          <div style={{ fontSize: 44, fontWeight: 800, marginTop: 6, letterSpacing: "-0.02em" }}>{fmt(pool?.uk ?? null)}</div>
+        </div>
+      </div>
+
+      <div className="nav-section" style={{ padding: "18px 0 6px" }}>Leads (pipeline)</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
         <div className="stat" style={{ padding: "24px 22px" }}>
           <div className="lbl" style={{ fontSize: 14 }}>Total Leads</div>
           <div style={{ fontSize: 44, fontWeight: 800, marginTop: 6, letterSpacing: "-0.02em" }}>{fmt(total)}</div>
