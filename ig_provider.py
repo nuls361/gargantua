@@ -23,6 +23,7 @@ class IGProvider:
     BASE = "https://api.tikhub.io"
     EP_USER = "/api/v1/instagram/v1/fetch_user_info_by_username_v2"
     EP_TAGGED = "/api/v1/instagram/v1/fetch_user_tagged_posts"
+    EP_POSTS = "/api/v1/instagram/v1/fetch_user_posts"
     EP_REELS = "/api/v1/instagram/v1/fetch_user_reels"
     EP_HASHTAG = "/api/v1/instagram/v1/fetch_hashtag_posts"
     MAX_RETRIES = 4
@@ -68,6 +69,9 @@ class IGProvider:
 
     def fetch_tagged_posts(self, user_id: str, count: int = 30, cursor: str | None = None) -> dict:
         return self._get(self.EP_TAGGED, {"user_id": user_id, "count": count, "end_cursor": cursor}).get("data", {})
+
+    def fetch_user_posts(self, user_id: str, count: int = 12, cursor: str | None = None) -> dict:
+        return self._get(self.EP_POSTS, {"user_id": user_id, "count": count, "end_cursor": cursor}).get("data", {})
 
     def fetch_reels(self, user_id: str, count: int = 12, cursor: str | None = None) -> dict:
         return self._get(self.EP_REELS, {"user_id": user_id, "count": count, "end_cursor": cursor}).get("data", {})
