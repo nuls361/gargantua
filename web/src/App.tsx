@@ -130,7 +130,7 @@ function Sidebar({ email }: { email: string }) {
   }
   return (
     <aside className="sidebar">
-      <h1>Harvester</h1>
+      <h1>WePush</h1>
       <button
         className="cmdk-trigger"
         onClick={() => window.dispatchEvent(new Event("open-command-k"))}
