@@ -12,7 +12,9 @@ type Job = {
   earning_model: string | null; earning_min: number | null; earning_max: number | null; view_goal: number | null;
   target_market: string | null; foll_min: number | null; foll_max: number | null;
   instantly_campaign_id: string | null; created_at: string;
+  campaign_google: string | null; campaign_outlook: string | null; campaign_custom: string | null;
 };
+type Campaign = { instantly_campaign_id: string; name: string };
 // Match row = same shape/fields the Search page renders, + a fit score.
 type Match = {
   sec_uid: string; handle: string; display_name: string | null; category: string | null;
@@ -121,6 +123,11 @@ function CreateJob({ onClose, onSaved, job }: { onClose: () => void; onSaved: (i
   const [market, setMarket] = useState(job?.target_market ?? "dach");
   const [follMin, setFollMin] = useState(job?.foll_min != null ? String(job.foll_min) : "");
   const [follMax, setFollMax] = useState(job?.foll_max != null ? String(job.foll_max) : "");
+  const [cGoogle, setCGoogle] = useState(job?.campaign_google ?? "");
+  const [cOutlook, setCOutlook] = useState(job?.campaign_outlook ?? "");
+  const [cCustom, setCCustom] = useState(job?.campaign_custom ?? "");
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  useEffect(() => { void supabase.from("campaigns").select("instantly_campaign_id,name").order("name").then(({ data }) => setCampaigns((data ?? []) as Campaign[])); }, []);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [docUrl, setDocUrl] = useState("");
@@ -153,6 +160,7 @@ function CreateJob({ onClose, onSaved, job }: { onClose: () => void; onSaved: (i
       earning_min: earnMin ? Number(earnMin) : null, earning_max: earnMax ? Number(earnMax) : null,
       view_goal: viewGoal ? Number(viewGoal) : null,
       target_market: market || null, foll_min: follMin ? Number(follMin) : null, foll_max: follMax ? Number(follMax) : null,
+      campaign_google: cGoogle || null, campaign_outlook: cOutlook || null, campaign_custom: cCustom || null,
     };
     const res = job
       ? await supabase.from("jobs").update(payload).eq("id", job.id).select("id").single()
@@ -163,10 +171,10 @@ function CreateJob({ onClose, onSaved, job }: { onClose: () => void; onSaved: (i
   }
 
   return (
-    <div className="wp-scrim" onClick={onClose}>
-      <div className="wp-panel jobform" onClick={e => e.stopPropagation()}>
+    <div className="wp-scrim show" onClick={onClose}>
+      <div className="wp-panel jobform show" onClick={e => e.stopPropagation()}>
         <div className="p-head"><div><div className="eyebrow">{job ? "Edit job" : "New job"}</div><h2 style={{ margin: 0 }}>{job ? title || "Job" : "From a brand brief"}</h2></div><button className="xbtn" onClick={onClose}>✕</button></div>
-        <div className="fcard" style={{ marginTop: 12 }}>
+        <div className="fcard" style={{ margin: "12px 18px 22px" }}>
           <div className="fgrid" style={{ gridTemplateColumns: job ? "2fr 1fr" : "1fr" }}>
             <div className="field"><label>Job title *</label><input className="inp" placeholder="ABOUT YOU – Fashion Inspiration" value={title} onChange={e => setTitle(e.target.value)} /></div>
             {job && <div className="field"><label>Status</label><select value={status} onChange={e => setStatus(e.target.value)}><option value="draft">Draft</option><option value="active">Active</option><option value="paused">Paused</option><option value="closed">Closed</option></select></div>}
@@ -196,9 +204,15 @@ function CreateJob({ onClose, onSaved, job }: { onClose: () => void; onSaved: (i
             <div className="field"><label>Followers min</label><input className="inp num" placeholder="1000" value={follMin} onChange={e => setFollMin(e.target.value)} /></div>
             <div className="field"><label>Followers max</label><input className="inp num" placeholder="250000" value={follMax} onChange={e => setFollMax(e.target.value)} /></div>
           </div>
+          <div className="fsec">Instantly campaign per email provider <span style={{ color: "var(--wp-muted)", textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>— routes each creator by their inbox provider</span></div>
+          <div className="fgrid">
+            <div className="field"><label>Google inbox → campaign</label><select value={cGoogle} onChange={e => setCGoogle(e.target.value)}><option value="">— none —</option>{campaigns.map(c => <option key={c.instantly_campaign_id} value={c.instantly_campaign_id}>{c.name}</option>)}</select></div>
+            <div className="field"><label>Outlook inbox → campaign</label><select value={cOutlook} onChange={e => setCOutlook(e.target.value)}><option value="">— none —</option>{campaigns.map(c => <option key={c.instantly_campaign_id} value={c.instantly_campaign_id}>{c.name}</option>)}</select></div>
+            <div className="field"><label>Custom SMTP → campaign</label><select value={cCustom} onChange={e => setCCustom(e.target.value)}><option value="">— none —</option>{campaigns.map(c => <option key={c.instantly_campaign_id} value={c.instantly_campaign_id}>{c.name}</option>)}</select></div>
+          </div>
           {err && <div className="notice err" style={{ marginTop: 10 }}>{err}</div>}
           <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-            <button className="sbtn2" onClick={save} disabled={saving}>{saving ? "Creating…" : "Create job & match"}</button>
+            <button className="sbtn2" onClick={save} disabled={saving}>{saving ? "Saving…" : job ? "Save changes" : "Create job"}</button>
             <button className="dirbtn" onClick={onClose}>Cancel</button>
           </div>
         </div>

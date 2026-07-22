@@ -221,7 +221,7 @@
 .wp .jobmeta .jm .v{font-size:17px;font-weight:800;margin-top:2px}
 .wp .jobbrief{background:var(--wp-card);border:1px solid var(--wp-line);border-radius:12px;padding:12px 14px;margin:8px 0;font-size:14px;line-height:1.5}
 .wp .jobbrief summary{cursor:pointer;font-weight:600}
-.wp .jobform{max-width:640px;width:92vw;max-height:88vh;overflow-y:auto}
+.wp-panel.jobform{width:min(640px,96vw);overflow-y:auto}
 .wp .jobform textarea.inp{resize:vertical;font-family:inherit;line-height:1.5}
 .wp .xbtn{background:none;border:none;font-size:18px;color:var(--wp-muted);cursor:pointer;padding:4px 8px;line-height:1}
 .wp .xbtn:hover{color:var(--wp-ink)}
