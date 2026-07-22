@@ -211,3 +211,19 @@
 .wp-panel .minilegend{display:flex;gap:14px;font-size:11px;color:var(--wp-muted);margin-top:6px}
 .wp-panel .minilegend span{display:flex;align-items:center;gap:5px}
 .wp-panel .minilegend i{width:9px;height:9px;border-radius:3px;display:inline-block}
+
+/* ---- Jobs ---------------------------------------------------------------- */
+.wp .backlink{display:inline-block;color:var(--wp-muted);text-decoration:none;font-size:13px;font-weight:600;margin-bottom:10px}
+.wp .backlink:hover{color:var(--wp-ink)}
+.wp .jobmeta{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}
+.wp .jobmeta .jm{background:var(--wp-card);border:1px solid var(--wp-line);border-radius:12px;padding:10px 14px;min-width:88px}
+.wp .jobmeta .jm .k{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--wp-muted);font-weight:700}
+.wp .jobmeta .jm .v{font-size:17px;font-weight:800;margin-top:2px}
+.wp .jobbrief{background:var(--wp-card);border:1px solid var(--wp-line);border-radius:12px;padding:12px 14px;margin:8px 0;font-size:14px;line-height:1.5}
+.wp .jobbrief summary{cursor:pointer;font-weight:600}
+.wp .jobform{max-width:640px;width:92vw;max-height:88vh;overflow-y:auto}
+.wp .jobform textarea.inp{resize:vertical;font-family:inherit;line-height:1.5}
+.wp .xbtn{background:none;border:none;font-size:18px;color:var(--wp-muted);cursor:pointer;padding:4px 8px;line-height:1}
+.wp .xbtn:hover{color:var(--wp-ink)}
+.wp .notice{background:color-mix(in srgb,var(--wp-good) 12%,transparent);border:1px solid color-mix(in srgb,var(--wp-good) 35%,transparent);color:var(--wp-good);border-radius:10px;padding:9px 13px;font-size:13px;font-weight:600;margin:10px 0}
+.wp .notice.err{background:color-mix(in srgb,#C0341D 12%,transparent);border-color:color-mix(in srgb,#C0341D 35%,transparent);color:#C0341D}

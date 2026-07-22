@@ -16,6 +16,7 @@ import Brands from "./pages/Brands";
 import Sounds from "./pages/Sounds";
 import Seeds from "./pages/Seeds";
 import Harvest from "./pages/Harvest";
+import Jobs from "./pages/Jobs";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -59,6 +60,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/jobs" element={<Jobs />} />
+          <Route path="/jobs/:id" element={<Jobs />} />
           <Route path="/lists" element={<Lists />} />
           <Route path="/lists/recycle" element={<RecycleList />} />
           <Route path="/lists/:id" element={<Lists />} />
@@ -143,7 +146,7 @@ function Sidebar({ email }: { email: string }) {
         <NavLink to="/search">Search</NavLink>
         <NavLink to="/harvest">Harvest</NavLink>
         <div className="nav-section">Pipeline</div>
-        <NavLink to="/lists">Lists</NavLink>
+        <NavLink to="/jobs">Jobs</NavLink>
       </nav>
       <div className="spacer" />
       <nav className="nav-secondary">
