@@ -107,12 +107,6 @@ function CreateJob({ onClose, onSaved, job }: { onClose: () => void; onSaved: (i
   const [briefing, setBriefing] = useState(job?.briefing ?? "");
   const [earnMin, setEarnMin] = useState(job?.earning_min != null ? String(job.earning_min) : "");
   const [earnMax, setEarnMax] = useState(job?.earning_max != null ? String(job.earning_max) : "");
-  const [viewGoal, setViewGoal] = useState(job?.view_goal != null ? String(job.view_goal) : "");
-  const [cGoogle, setCGoogle] = useState(job?.campaign_google ?? "");
-  const [cOutlook, setCOutlook] = useState(job?.campaign_outlook ?? "");
-  const [cCustom, setCCustom] = useState(job?.campaign_custom ?? "");
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  useEffect(() => { void supabase.from("campaigns").select("instantly_campaign_id,name").order("name").then(({ data }) => setCampaigns((data ?? []) as Campaign[])); }, []);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [docUrl, setDocUrl] = useState("");
@@ -142,8 +136,6 @@ function CreateJob({ onClose, onSaved, job }: { onClose: () => void; onSaved: (i
     const payload = {
       title: title.trim(), status, subject: subject.trim() || null, briefing: briefing.trim() || null,
       earning_min: earnMin ? Number(earnMin) : null, earning_max: earnMax ? Number(earnMax) : null,
-      view_goal: viewGoal ? Number(viewGoal) : null,
-      campaign_google: cGoogle || null, campaign_outlook: cOutlook || null, campaign_custom: cCustom || null,
     };
     const res = job
       ? await supabase.from("jobs").update(payload).eq("id", job.id).select("id").single()
@@ -177,13 +169,6 @@ function CreateJob({ onClose, onSaved, job }: { onClose: () => void; onSaved: (i
           <div className="fgrid">
             <div className="field"><label>Payout min €</label><input className="inp num" placeholder="40" value={earnMin} onChange={e => setEarnMin(e.target.value)} /></div>
             <div className="field"><label>Payout max €</label><input className="inp num" placeholder="500" value={earnMax} onChange={e => setEarnMax(e.target.value)} /></div>
-            <div className="field"><label>View goal</label><input className="inp num" placeholder="e.g. 50000" value={viewGoal} onChange={e => setViewGoal(e.target.value)} /></div>
-          </div>
-          <div className="fsec">Instantly campaign per email provider <span style={{ color: "var(--wp-muted)", textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>— routes each creator by their inbox provider</span></div>
-          <div className="fgrid">
-            <div className="field"><label>Google inbox → campaign</label><select value={cGoogle} onChange={e => setCGoogle(e.target.value)}><option value="">— none —</option>{campaigns.map(c => <option key={c.instantly_campaign_id} value={c.instantly_campaign_id}>{c.name}</option>)}</select></div>
-            <div className="field"><label>Outlook inbox → campaign</label><select value={cOutlook} onChange={e => setCOutlook(e.target.value)}><option value="">— none —</option>{campaigns.map(c => <option key={c.instantly_campaign_id} value={c.instantly_campaign_id}>{c.name}</option>)}</select></div>
-            <div className="field"><label>Custom SMTP → campaign</label><select value={cCustom} onChange={e => setCCustom(e.target.value)}><option value="">— none —</option>{campaigns.map(c => <option key={c.instantly_campaign_id} value={c.instantly_campaign_id}>{c.name}</option>)}</select></div>
           </div>
           {err && <div className="notice err" style={{ marginTop: 10 }}>{err}</div>}
           <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
@@ -205,11 +190,19 @@ function JobDetail({ id }: { id: string }) {
   const [generating, setGenerating] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
 
   const reloadJob = useCallback(async () => {
     const { data } = await supabase.from("jobs").select("*").eq("id", id).single();
     setJob(data as Job);
   }, [id]);
+
+  useEffect(() => { void supabase.from("campaigns").select("instantly_campaign_id,name").order("name").then(({ data }) => setCampaigns((data ?? []) as Campaign[])); }, []);
+
+  async function assignCampaign(field: "campaign_google" | "campaign_outlook" | "campaign_custom", value: string) {
+    setJob(j => j ? { ...j, [field]: value || null } : j);
+    await supabase.from("jobs").update({ [field]: value || null }).eq("id", id);
+  }
 
   const loadMembers = useCallback(async () => {
     const { data: jc } = await supabase.from("job_creators")
@@ -274,6 +267,20 @@ function JobDetail({ id }: { id: string }) {
       </div>
 
       {job.briefing && <details className="jobbrief"><summary><b>Briefing</b></summary><div style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>{job.briefing}</div></details>}
+
+      <div className="fcard" style={{ marginTop: 12 }}>
+        <div className="fsec" style={{ borderTop: 0, marginTop: 0, paddingTop: 0 }}>Instantly campaign per email provider <span style={{ color: "var(--wp-muted)", textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>— routes each member by their inbox provider</span></div>
+        <div className="fgrid" style={{ marginTop: 12 }}>
+          {([["campaign_google", "Google inbox"], ["campaign_outlook", "Outlook inbox"], ["campaign_custom", "Custom SMTP"]] as const).map(([field, label]) => (
+            <div className="field" key={field}><label>{label} → campaign</label>
+              <select value={(job[field] as string | null) ?? ""} onChange={e => assignCampaign(field, e.target.value)}>
+                <option value="">— none —</option>
+                {campaigns.map(c => <option key={c.instantly_campaign_id} value={c.instantly_campaign_id}>{c.name}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <div className="listhead" style={{ marginTop: 16 }}>
         <b>{members.length}</b><span>members</span>
