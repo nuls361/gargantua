@@ -6,7 +6,7 @@ import { supabase } from "../lib/supabase";
 // see the creators it surfaced (via discovered_from). Scoped under .wp.
 
 type SourceType = "brand" | "hashtag" | "sound" | "creator";
-type Row = { source_type: SourceType; source_value: string; creators_found: number; creators_dach: number; creators_uk: number; creators_enriched: number; last_seen: string | null };
+type Row = { source_type: SourceType; source_value: string; creators_found: number; creators_dach: number; creators_uk: number; creators_enriched: number; last_seen: string | null; avatar_url?: string | null };
 type SourceCreator = { sec_uid: string; handle: string; display_name: string | null; follower_count: number | null; engagement_median: number | null; market: string | null; email: string | null; category: string | null; platform: string | null; avatar_url: string | null };
 
 const CAT_HUE: Record<string, number> = { beauty:330,wellness:160,fitness:14,fashion:280,food:26,travel:200,gaming:250,tech:210,finance:150,music:190,comedy:45,parenting:340,"home & interior":175,sustainability:135,relationship:350,dance:300,pets:32,cars:220,education:230,art:265,lifestyle:255 };
@@ -21,7 +21,15 @@ const ago = (iso: string | null) => { if (!iso) return "—"; const d = (Date.no
 const catColor = (c: string | null) => `hsl(${(c && CAT_HUE[c]) ?? 255} 60% 52%)`;
 const initials = (c: SourceCreator) => ((c.display_name || c.handle).replace(/[^\p{L}\p{N} ]/gu, "").trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase() || c.handle[0].toUpperCase());
 const displayValue = (t: SourceType, v: string) => t === "hashtag" ? (v.startsWith("#") ? v : `#${v}`) : (t === "brand" || t === "creator") ? (v.startsWith("@") ? v : `@${v}`) : v;
-const normalizeValue = (t: SourceType, raw: string) => { const v = raw.trim(); if (t === "hashtag") return v.replace(/^#/, ""); if (t === "brand" || t === "creator") return v.startsWith("@") ? v : `@${v.replace(/^@/, "")}`; return v; };
+const normalizeValue = (t: SourceType, raw: string) => {
+  let v = raw.trim();
+  // Pasted a full profile URL? Pull the handle out of it (tiktok.com/@x, instagram.com/x).
+  const m = v.match(/(?:tiktok\.com\/@|instagram\.com\/)([\w.]+)/i);
+  if (m) v = m[1];
+  if (t === "hashtag") return v.replace(/^[#@]/, "");
+  if (t === "brand" || t === "creator") return `@${v.replace(/^@+/, "")}`;
+  return v;
+};
 const optionsFor = (t: SourceType) => { const base = { enrich: true, dach_only: false, budget_usd: 2, max_depth: 2 }; return t === "sound" ? { ...base, pages: 10 } : t === "creator" ? { ...base, pages: 3 } : { ...base, pages: 8 }; };
 const PAGE = 25;
 
@@ -58,13 +66,14 @@ export default function Harvest() {
     setLoading(true);
     const [srcRes, brandRes] = await Promise.all([
       supabase.from("source_overview").select("source_type,source_value,creators_found,creators_dach,creators_uk,creators_enriched,last_seen").limit(2000),
-      supabase.from("brand_overview").select("handle,creators_found,creators_dach,creators_uk,creators_enriched,last_seen").or("creators_found.gt.0,market.in.(dach,uk)").limit(2000),
+      supabase.from("brand_overview").select("handle,creators_found,creators_dach,creators_uk,creators_enriched,last_seen,avatar_url").or("creators_found.gt.0,market.in.(dach,uk)").limit(2000),
     ]);
     if (srcRes.error) setError(srcRes.error.message);
     const src = (srcRes.data ?? []) as Row[];
     const brands: Row[] = ((brandRes.data ?? []) as Array<Record<string, unknown>>).map((b) => ({
       source_type: "brand", source_value: String(b.handle ?? ""), creators_found: Number(b.creators_found ?? 0),
       creators_dach: Number(b.creators_dach ?? 0), creators_uk: Number(b.creators_uk ?? 0), creators_enriched: Number(b.creators_enriched ?? 0), last_seen: (b.last_seen as string | null) ?? null,
+      avatar_url: (b.avatar_url as string | null) ?? null,
     }));
     setRows([...src, ...brands]); setLoading(false);
   }, []);
@@ -142,7 +151,7 @@ export default function Harvest() {
           const oPct = Math.max(0, 100 - dPct - uPct);
           return (
             <div className="crow" key={`${s.source_type}:${s.source_value}`} onClick={() => setViewSrc(s)}>
-              <div className="stype" style={{ background: t.c }}>{t.ic}</div>
+              <div className="stype" style={{ background: t.c }}>{s.avatar_url ? <img src={s.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }} onError={(e) => { e.currentTarget.style.display = "none"; }} /> : t.ic}</div>
               <div className="idcol">
                 <div className="nm">{displayValue(s.source_type, s.source_value)}</div>
                 <div className="hd">{t.label} · last harvested {ago(s.last_seen)}</div>
@@ -178,7 +187,7 @@ export default function Harvest() {
           return (
             <>
               <div className="p-head">
-                <div className="stype" style={{ background: t.c, width: 46, height: 46 }}>{t.ic}</div>
+                <div className="stype" style={{ background: t.c, width: 46, height: 46 }}>{viewSrc.avatar_url ? <img src={viewSrc.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }} onError={(e) => { e.currentTarget.style.display = "none"; }} /> : t.ic}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="nm">{displayValue(viewSrc.source_type, viewSrc.source_value)}</div>
                   <div className="hd">{t.label} · {viewSrc.creators_found} found · {viewSrc.creators_dach} DACH · {viewSrc.creators_enriched} enriched</div>

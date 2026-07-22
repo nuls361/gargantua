@@ -173,7 +173,7 @@
 .wp .search{border:1px solid var(--wp-line);background:var(--wp-card);border-radius:10px;padding:8px 12px;font:inherit;font-size:13px;color:var(--wp-ink);outline:none;width:200px}
 .wp .search:focus{border-color:var(--wp-acc);box-shadow:0 0 0 3px var(--wp-accsoft)}
 .wp .toolbar2{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:20px 0 12px}
-.wp .stype{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-weight:800;font-size:18px;flex:none;color:#fff}.wp .stype svg{width:20px;height:20px;stroke:#fff;fill:none;stroke-width:2}
+.wp .stype{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-weight:800;font-size:18px;flex:none;color:#fff;overflow:hidden}.wp .stype svg{width:20px;height:20px;stroke:#fff;fill:none;stroke-width:2}
 .wp .yield{display:flex;align-items:center;gap:9px;margin-top:8px;max-width:340px}.wp .yield .track{flex:1;height:6px;border-radius:99px;background:var(--wp-track);overflow:hidden;display:flex}.wp .yield .track i{height:100%}.wp .yield .lbl{font-size:11px;color:var(--wp-muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 .wp .reharv{border:1px solid var(--wp-line);background:var(--wp-card);color:var(--wp-ink2);border-radius:9px;padding:8px 13px;font:inherit;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;cursor:pointer}.wp .reharv:hover{border-color:var(--wp-acc);color:var(--wp-acc);background:var(--wp-accsoft)}.wp .reharv svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
 .wp-panel .pcrow{display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center;padding:10px;border-radius:11px}.wp-panel .pcrow+.pcrow{border-top:1px solid var(--wp-line2)}
