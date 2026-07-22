@@ -50,6 +50,14 @@ function PlatIcon({ p }: { p: string | null }) {
     : <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.6 5.82A4.28 4.28 0 0 1 15.54 3h-3.2v12.9a2.59 2.59 0 1 1-2.03-2.53v-3.26a5.76 5.76 0 1 0 5.03 5.71V8.9a7.5 7.5 0 0 0 4.3 1.34V7.06a4.28 4.28 0 0 1-2.99-1.24z"/></svg>;
 }
 const profileUrl = (r: Row) => r.platform === "instagram" ? `https://www.instagram.com/${r.handle}` : `https://www.tiktok.com/@${r.handle}`;
+// Parse sample-creator handles out of pasted lines (URL, @handle, or plain).
+function parseHandles(text: string): string[] {
+  return text.split(/[\n,]+/).map(line => {
+    const t = line.trim(); if (!t) return "";
+    const m = t.match(/(?:tiktok\.com\/@|instagram\.com\/)([\w.]+)/i);
+    return (m ? m[1] : t).replace(/^@+/, "").trim();
+  }).filter(Boolean);
+}
 
 function Mono({ r, big }: { r: Row; big?: boolean }) {
   return (
@@ -73,6 +81,10 @@ export default function Search() {
   const [pDeb, setPDeb] = useState("");
   const [semIds, setSemIds] = useState<string[]>([]);
   const [semLoading, setSemLoading] = useState(false);
+  const [lookalike, setLookalike] = useState("");
+  const [lookDeb, setLookDeb] = useState("");
+  const [lookIds, setLookIds] = useState<string[]>([]);
+  const [lookLoading, setLookLoading] = useState(false);
   const [adv, setAdv] = useState(false);
 
   // filters
@@ -112,10 +124,19 @@ export default function Search() {
   const [panel, setPanel] = useState<Row | null>(null);
 
   useEffect(() => { const t = setTimeout(() => setPDeb(prompt), 300); return () => clearTimeout(t); }, [prompt]);
+  useEffect(() => { const t = setTimeout(() => setLookDeb(lookalike), 400); return () => clearTimeout(t); }, [lookalike]);
+  const lookHandles = parseHandles(lookDeb);
+  const lookActive = lookHandles.length > 0;
   const loadLists = useCallback(() => {
-    supabase.from("lists").select("id,name").eq("kind", "working").order("name").then(({ data }) => setWorkingLists((data ?? []) as WList[]));
+    supabase.from("jobs").select("id,title").order("created_at", { ascending: false })
+      .then(({ data }) => setWorkingLists(((data ?? []) as { id: string; title: string }[]).map(j => ({ id: j.id, name: j.title }))));
   }, []);
   useEffect(() => { loadLists(); }, [loadLists]);
+  // Deep-link from a job's "Find lookalikes →": prefill the lookalike filter.
+  useEffect(() => {
+    const like = new URLSearchParams(window.location.search).get("like");
+    if (like) { setLookalike(like); setAdv(true); }
+  }, []);
 
   const withFilters = useCallback(<T,>(qb: T): T => {
     let q = qb as any;
@@ -125,6 +146,11 @@ export default function Search() {
     // same factual filters below refine them (market, follower band, ER, …).
     if (mode === "semantic" && pDeb.trim()) {
       q = q.in("sec_uid", semIds.length ? semIds : ["__none__"]);
+    }
+    // Lookalike advanced filter: constrain to creators similar to the pasted samples.
+    // Composes (intersects) with semantic + all factual filters below.
+    if (lookActive) {
+      q = q.in("sec_uid", lookIds.length ? lookIds : ["__none__"]);
     }
     if (market) q = q.eq("market", market);
     if (platform) q = q.eq("platform", platform);
@@ -151,7 +177,23 @@ export default function Search() {
     if (emailDiff) q = q.in("email_difficulty", DIFF_ORDER.slice(0, DIFF_ORDER.indexOf(emailDiff) + 1));
     if (exclWp) q = q.or("is_songpush_user.is.null,is_songpush_user.eq.false");
     return q as T;
-  }, [mode, pDeb, semIds, market, platform, category, format, follMin, follMax, erMin, erMax, viewsMin, persona, lang, speak, vcMin, vcMax, postMin, src, srcVal, onmarket, engaged, responsive, adMin, etype, emailDiff, exclWp, contact]);
+  }, [mode, pDeb, semIds, lookActive, lookIds, market, platform, category, format, follMin, follMax, erMin, erMax, viewsMin, persona, lang, speak, vcMin, vcMax, postMin, src, srcVal, onmarket, engaged, responsive, adMin, etype, emailDiff, exclWp, contact]);
+
+  // Lookalike: compute the centroid of the pasted samples and get the nearest creators (ranked).
+  useEffect(() => {
+    if (!lookActive) { setLookIds([]); return; }
+    let cancelled = false;
+    setLookLoading(true);
+    void (async () => {
+      const { data, error: err } = await supabase.rpc("lookalike_ids", { sample_handles: lookHandles, p_count: 500 });
+      if (cancelled) return;
+      if (err) setLookIds([]);
+      else setLookIds(((data ?? []) as { sec_uid: string }[]).map(r => r.sec_uid));
+      setLookLoading(false);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lookDeb]);
 
   // Semantic search: embed the prompt server-side (OpenAI, via the edge fn) and
   // get back the cosine-nearest creators, ranked. semIds drives withFilters above.
@@ -188,16 +230,20 @@ export default function Search() {
     setLoading(true); setError(null);
     const sk = sortKey === "fit" ? "follower_count" : sortKey;
     const semActive = mode === "semantic" && pDeb.trim().length > 0;
+    // Either an embedding ranking (semantic prompt) or the lookalike filter drives a
+    // client-side ranked path; lookalike takes priority for "Best match" ordering.
+    const rankActive = semActive || lookActive;
+    const rankIds = lookActive ? lookIds : semIds;
 
-    if (semActive) {
-      // Wait for / handle the AI ranking, then sort + paginate client-side so
+    if (rankActive) {
+      // Wait for / handle the ranking, then sort + paginate client-side so
       // "Best match" preserves cosine relevance (Postgres can't order by an id list).
-      if (!semIds.length) { setRows([]); setTotal(0); setLoading(false); return; }
+      if (!rankIds.length) { setRows([]); setTotal(0); setLoading(false); return; }
       const { data, error: err } = await withFilters(supabase.from("tt_creators_x").select(COLS)).limit(500);
       if (err) { setError(err.message); setRows([]); setTotal(0); setLoading(false); return; }
       let rs = (data ?? []) as Row[];
       if (sortKey === "fit") {
-        const rank = new Map(semIds.map((id, i) => [id, i]));
+        const rank = new Map(rankIds.map((id, i) => [id, i]));
         rs = rs.slice().sort((a, b) => (rank.get(a.sec_uid) ?? 1e9) - (rank.get(b.sec_uid) ?? 1e9));
       } else {
         rs = rs.slice().sort((a, b) => {
@@ -218,7 +264,7 @@ export default function Search() {
     if (err) setError(err.message);
     else { setRows((data ?? []) as Row[]); setTotal(count ?? 0); }
     setLoading(false);
-  }, [withFilters, sortKey, sortDir, page, mode, pDeb, semIds]);
+  }, [withFilters, sortKey, sortDir, page, mode, pDeb, semIds, lookActive, lookIds]);
 
   useEffect(() => { setPage(0); }, [withFilters, sortKey, sortDir]);
   useEffect(() => { void load(); }, [load]);
@@ -226,23 +272,25 @@ export default function Search() {
   async function send() {
     setSending(true); setError(null); setNotice(null);
     try {
-      let listId = ""; let listName = "";
+      let jobId = ""; let jobName = "";
       if (listSel === "__new") {
-        const name = newName.trim(); if (!name) throw new Error("Enter a list name.");
-        const { data, error } = await supabase.from("lists").insert({ name, kind: "working" }).select("id,name").single();
-        if (error) throw error; listId = data.id; listName = data.name;
+        const name = newName.trim(); if (!name) throw new Error("Enter a job title.");
+        const { data, error } = await supabase.from("jobs").insert({ title: name }).select("id,title").single();
+        if (error) throw error; jobId = data.id; jobName = data.title;
       } else {
-        listId = listSel; listName = workingLists.find(l => l.id === listSel)?.name ?? "list";
+        jobId = listSel; jobName = workingLists.find(l => l.id === listSel)?.name ?? "job";
       }
       const cap = takeN ? Math.max(1, Number(takeN)) : 5000;
       const sk = sortKey === "fit" ? "follower_count" : sortKey;
+      const rankActive = (mode === "semantic" && pDeb.trim().length > 0) || lookActive;
+      const rankIds = lookActive ? lookIds : semIds;
       let srcRows: Row[];
-      if (mode === "semantic" && pDeb.trim()) {
+      if (rankActive) {
         const { data, error } = await withFilters(supabase.from("tt_creators_x").select(COLS)).limit(500);
         if (error) throw error;
         let rs = (data ?? []) as Row[];
         if (sortKey === "fit") {
-          const rank = new Map(semIds.map((id, i) => [id, i]));
+          const rank = new Map(rankIds.map((id, i) => [id, i]));
           rs = rs.slice().sort((a, b) => (rank.get(a.sec_uid) ?? 1e9) - (rank.get(b.sec_uid) ?? 1e9));
         } else {
           rs = rs.slice().sort((a, b) => {
@@ -257,21 +305,14 @@ export default function Search() {
         if (error) throw error;
         srcRows = (data ?? []) as Row[];
       }
-      if (!srcRows.length) throw new Error("Nothing to send.");
-      const now = new Date().toISOString();
-      const crows = srcRows.map(r => ({
-        handle: r.handle, tiktok_username: r.handle, platform: r.platform || "tiktok", email: r.email || null,
-        region_label: r.market === "dach" ? "dach" : r.market === "uk" ? "uk" : null,
-        status: r.email ? "enriched" : "sourced", enriched_at: r.email ? now : null,
-        category: r.category, source_type: r.source_type, source_value: r.source_value || r.source_brand,
-        label: r.source_value || r.source_brand || null, list_id: listId, date_added: now,
-      }));
+      if (!srcRows.length) throw new Error("Nothing to add.");
+      const jrows = srcRows.map(r => ({ job_id: jobId, sec_uid: r.sec_uid, handle: r.handle, state: "sourced" }));
       let inserted = 0;
-      for (let i = 0; i < crows.length; i += 200) {
-        const { data: ins, error: e2 } = await supabase.from("creators").upsert(crows.slice(i, i + 200), { onConflict: "email_normalized", ignoreDuplicates: true }).select("id");
+      for (let i = 0; i < jrows.length; i += 200) {
+        const { data: ins, error: e2 } = await supabase.from("job_creators").upsert(jrows.slice(i, i + 200), { onConflict: "job_id,sec_uid", ignoreDuplicates: true }).select("sec_uid");
         if (e2) throw e2; inserted += ins?.length ?? 0;
       }
-      setNotice(`Sent ${inserted} to “${listName}”.`);
+      setNotice(`Added ${inserted} to “${jobName}”.`);
       setNewName(""); loadLists();
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     setSending(false);
@@ -318,6 +359,12 @@ export default function Search() {
           </button>
           {adv && (
             <div className="fgrid" style={{ marginTop: 15, paddingTop: 16, borderTop: "1px solid var(--wp-line2)" }}>
+              <div className="fsec">Lookalike</div>
+              <div className="field" style={{ gridColumn: "1/-1" }}>
+                <label>Similar to these creators <span style={{ color: "var(--wp-muted)", textTransform: "none", letterSpacing: 0 }}>(paste handles or profile URLs — ranks by similarity, combines with every filter)</span></label>
+                <textarea className="inp" rows={2} placeholder={"@thatsonyi, @alicelich   or   https://www.tiktok.com/@…"} value={lookalike} onChange={e => setLookalike(e.target.value)} style={{ resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} />
+                {lookActive && <div style={{ fontSize: 12, color: "var(--wp-accink)", marginTop: 4, fontWeight: 600 }}>{lookLoading ? "Finding lookalikes…" : `${lookHandles.length} sample${lookHandles.length > 1 ? "s" : ""} · ${lookIds.length} similar creators`}</div>}
+              </div>
               <div className="fsec">Audience &amp; content</div>
               <div className="field"><label>Persona</label><select value={persona} onChange={e => setPersona(e.target.value)}><option value="">All personas</option><option value="solo">Solo</option><option value="couple">Couple</option><option value="family">Family</option><option value="group">Group</option></select></div>
               <div className="field"><label>Audience language</label><select value={lang} onChange={e => setLang(e.target.value)}><option value="">All</option><option value="de">German</option><option value="en">English</option><option value="mixed">Mixed</option></select></div>
@@ -351,12 +398,12 @@ export default function Search() {
         <span className="grow" />
         <label className="takebox">Take top<input className="takeinp num" placeholder="all" value={takeN} onChange={e => setTakeN(e.target.value)} /></label>
         <select className="listsel" value={listSel} onChange={e => setListSel(e.target.value)}>
-          <option value="__new">＋ New list…</option>
+          <option value="__new">＋ New job…</option>
           {workingLists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
-        {listSel === "__new" && <input className="listsel" style={{ maxWidth: 150 }} placeholder="List name…" value={newName} onChange={e => setNewName(e.target.value)} />}
+        {listSel === "__new" && <input className="listsel" style={{ maxWidth: 150 }} placeholder="Job title…" value={newName} onChange={e => setNewName(e.target.value)} />}
         <button className="sbtn2" onClick={send} disabled={sending || total === 0}>
-          <svg viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>{sending ? "Sending…" : "Send to list"}
+          <svg viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>{sending ? "Adding…" : "Add to job"}
         </button>
         <select className="sortsel" value={sortKey} onChange={e => setSortKey(e.target.value)}>
           <option value="fit">Best match</option>
@@ -370,7 +417,7 @@ export default function Search() {
       </div>
 
       <div className="rows">
-        {loading || semLoading ? <div className="empty">{semLoading ? "AI is ranking creators…" : "Loading…"}</div>
+        {loading || semLoading || lookLoading ? <div className="empty">{lookLoading ? "Finding lookalikes…" : semLoading ? "AI is ranking creators…" : "Loading…"}</div>
           : rows.length === 0 ? <div className="empty">{mode === "semantic" && !pDeb.trim() ? "Describe who you're looking for above." : "No creators for this search."}</div>
           : rows.map(r => (
             <div key={r.sec_uid} className={"crow" + (r.is_songpush_user ? " wepush" : "")} onClick={() => setPanel(r)}>

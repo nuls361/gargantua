@@ -223,10 +223,8 @@ function CreateJob({ onClose, onSaved, job }: { onClose: () => void; onSaved: (i
 
 function JobDetail({ id }: { id: string }) {
   const [job, setJob] = useState<Job | null>(null);
-  const [matches, setMatches] = useState<Match[]>([]);
+  const [members, setMembers] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
-  const [matching, setMatching] = useState(false);
-  const [savedCount, setSavedCount] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [emails, setEmails] = useState<Record<string, { subject: string; icebreaker: string; pitch: string }>>({});
   const [generating, setGenerating] = useState(false);
@@ -238,22 +236,36 @@ function JobDetail({ id }: { id: string }) {
     setJob(data as Job);
   }, [id]);
 
+  const loadMembers = useCallback(async () => {
+    const { data: jc } = await supabase.from("job_creators")
+      .select("sec_uid,fit_score,ai_subject,ai_icebreaker,ai_pitch").eq("job_id", id).order("added_at", { ascending: false });
+    const jrows = (jc ?? []) as { sec_uid: string; fit_score: number | null; ai_subject: string | null; ai_icebreaker: string | null; ai_pitch: string | null }[];
+    const em: Record<string, { subject: string; icebreaker: string; pitch: string }> = {};
+    for (const r of jrows) if (r.ai_subject) em[r.sec_uid] = { subject: r.ai_subject, icebreaker: r.ai_icebreaker ?? "", pitch: r.ai_pitch ?? "" };
+    setEmails(em);
+    if (!jrows.length) { setMembers([]); return; }
+    const { data: full } = await supabase.from("tt_creators_x").select(ROWCOLS).in("sec_uid", jrows.map(r => r.sec_uid));
+    const fitBy = new Map(jrows.map(r => [r.sec_uid, r.fit_score]));
+    const order = new Map(jrows.map((r, i) => [r.sec_uid, i]));
+    const merged = ((full ?? []) as Omit<Match, "similarity">[])
+      .map(r => ({ ...r, similarity: fitBy.get(r.sec_uid) ?? -1 }))
+      .sort((a, b) => (order.get(a.sec_uid) ?? 0) - (order.get(b.sec_uid) ?? 0));
+    setMembers(merged);
+  }, [id]);
+
   useEffect(() => {
     void (async () => {
       const { data } = await supabase.from("jobs").select("*").eq("id", id).single();
       setJob(data as Job); setLoading(false);
-      const { count } = await supabase.from("job_creators").select("sec_uid", { count: "exact", head: true }).eq("job_id", id);
-      setSavedCount(count ?? 0);
-      const { data: jc } = await supabase.from("job_creators").select("sec_uid,ai_subject,ai_icebreaker,ai_pitch").eq("job_id", id).not("ai_subject", "is", null);
-      setEmails(Object.fromEntries(((jc ?? []) as { sec_uid: string; ai_subject: string; ai_icebreaker: string; ai_pitch: string }[])
-        .map(r => [r.sec_uid, { subject: r.ai_subject, icebreaker: r.ai_icebreaker, pitch: r.ai_pitch }])));
+      await loadMembers();
     })();
-  }, [id]);
+  }, [id, loadMembers]);
 
   async function generate() {
-    if (!matches.length) return;
+    const todo = members.filter(m => !emails[m.sec_uid]).slice(0, 20).map(m => m.sec_uid);
+    const ids = todo.length ? todo : members.slice(0, 20).map(m => m.sec_uid);
+    if (!ids.length) { setNotice("Add members first — source them in Search."); return; }
     setGenerating(true); setNotice(null);
-    const ids = matches.slice(0, 20).map(m => m.sec_uid);
     const { data, error } = await supabase.functions.invoke("generate-job-emails", { body: { job_id: id, sec_uids: ids } });
     if (error) setNotice(error.message);
     else {
@@ -261,45 +273,14 @@ function JobDetail({ id }: { id: string }) {
       for (const e of ((data?.emails ?? []) as { sec_uid: string; subject: string; icebreaker: string; pitch: string }[]))
         map[e.sec_uid] = { subject: e.subject, icebreaker: e.icebreaker, pitch: e.pitch };
       setEmails(map);
-      setSavedCount(Object.keys(map).length);
       setNotice(`Generated ${(data?.emails ?? []).length} personalized emails.`);
     }
     setGenerating(false);
   }
 
-  const runMatch = useCallback(async () => {
-    if (!job) return;
-    setMatching(true); setNotice(null);
-    const { data, error } = await supabase.rpc("match_job_by_samples", {
-      sample_handles: job.sample_creators || [], p_market: job.target_market,
-      p_foll_min: job.foll_min, p_foll_max: job.foll_max, p_count: 100,
-    });
-    if (error) { setNotice(error.message); setMatching(false); return; }
-    const ranked = (data ?? []) as { sec_uid: string; similarity: number }[];
-    if (!ranked.length) { setMatches([]); setMatching(false); return; }
-    const sim = new Map(ranked.map(r => [r.sec_uid, r.similarity]));
-    // pull the full rows (same fields as Search) so the rows render identically
-    const { data: full } = await supabase.from("tt_creators_x").select(ROWCOLS).in("sec_uid", ranked.map(r => r.sec_uid));
-    const rows = ((full ?? []) as Omit<Match, "similarity">[])
-      .map(r => ({ ...r, similarity: sim.get(r.sec_uid) ?? 0 }))
-      .sort((a, b) => b.similarity - a.similarity);
-    setMatches(rows);
-    setMatching(false);
-  }, [job]);
-
-  useEffect(() => { if (job && (job.sample_creators || []).length) void runMatch(); }, [job, runMatch]);
-
-  async function saveMatches() {
-    if (!matches.length) return;
-    const rows = matches.map(m => ({ job_id: id, sec_uid: m.sec_uid, handle: m.handle, fit_score: m.similarity, state: "matched" }));
-    const { error } = await supabase.from("job_creators").upsert(rows, { onConflict: "job_id,sec_uid", ignoreDuplicates: false });
-    if (error) { setNotice(error.message); return; }
-    setSavedCount(rows.length);
-    setNotice(`Saved ${rows.length} matched creators to this job.`);
-  }
-
   if (loading) return <div className="wp"><div className="empty">Loading…</div></div>;
   if (!job) return <div className="wp"><div className="empty">Job not found.</div></div>;
+  const likeLink = `/search?like=${encodeURIComponent((job.sample_creators || []).map(h => "@" + h).join(", "))}`;
 
   return (
     <div className="wp">
@@ -323,12 +304,10 @@ function JobDetail({ id }: { id: string }) {
       {job.briefing && <details className="jobbrief"><summary><b>Briefing</b></summary><div style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>{job.briefing}</div></details>}
 
       <div className="listhead" style={{ marginTop: 16 }}>
-        <b>{matches.length}</b><span>lookalike matches</span>
-        <span style={{ color: "var(--wp-muted)", fontSize: 13, marginLeft: 8 }}>agencies excluded · email-ready only</span>
+        <b>{members.length}</b><span>members</span>
         <span className="grow" />
-        {savedCount > 0 && <span className="pill" style={{ background: "var(--wp-good)", color: "#fff", marginRight: 8 }}>{savedCount} saved</span>}
-        <button className="dirbtn" style={{ width: "auto", padding: "0 12px" }} onClick={saveMatches} disabled={!matches.length}>Save matches</button>
-        <button className="sbtn2" onClick={generate} disabled={!matches.length || generating}>
+        <Link className="dirbtn" style={{ width: "auto", padding: "0 12px", textDecoration: "none", display: "inline-flex", alignItems: "center" }} to={likeLink}>Find lookalikes →</Link>
+        <button className="sbtn2" onClick={generate} disabled={!members.length || generating}>
           <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l1.6 4.4L18 8l-4.4 1.6L12 14l-1.6-4.4L6 8l4.4-1.6L12 2z"/></svg>{generating ? "Generating…" : "Generate emails"}
         </button>
       </div>
@@ -336,10 +315,8 @@ function JobDetail({ id }: { id: string }) {
       {notice && <div className="notice">{notice}</div>}
 
       <div className="rows">
-        {matching ? <div className="empty">Matching lookalikes…</div>
-          : !(job.sample_creators || []).length ? <div className="empty">No sample creators on this job — add some to match.</div>
-          : matches.length === 0 ? <div className="empty">No matches (none of the sample handles are in the pool yet).</div>
-          : matches.map(m => {
+        {members.length === 0 ? <div className="empty">No members yet. Source creators in <Link to={likeLink} style={{ color: "var(--wp-accink)" }}>Search</Link> (semantic, filters, or lookalike) and “Add to job”.</div>
+          : members.map(m => {
             const em = emails[m.sec_uid];
             const isOpen = open === m.sec_uid;
             return (
@@ -361,7 +338,7 @@ function JobDetail({ id }: { id: string }) {
                   <div className="metric"><div className="v num">{fmt(m.follower_count)}</div><div className="k">Followers</div></div>
                   <div className="metric"><div className={"v num " + erClass(m.engagement_median)}>{m.engagement_median ?? "—"}%</div><div className="k">ER</div></div>
                   <div className="metric"><div className="v num">{fmt(m.avg_views)}</div><div className="k">Avg views</div></div>
-                  <div className="metric"><div className="v num" style={{ color: "var(--wp-acc)" }}>{Math.round(m.similarity * 100)}</div><div className="k">Fit</div></div>
+                  {m.similarity >= 0 && <div className="metric"><div className="v num" style={{ color: "var(--wp-acc)" }}>{Math.round(m.similarity * 100)}</div><div className="k">Fit</div></div>}
                   {m.email && <span className="mail-dot" title={m.email_difficulty && DIFF[m.email_difficulty] ? `Email · ${DIFF[m.email_difficulty].label} to reach` : "Email available"} style={m.email_difficulty && DIFF[m.email_difficulty] ? { background: DIFF[m.email_difficulty].color } : undefined} />}
                   <a className="iconbtn" href={profileUrl(m)} target="_blank" rel="noreferrer" title="Open profile" onClick={e => e.stopPropagation()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
                 </div>
