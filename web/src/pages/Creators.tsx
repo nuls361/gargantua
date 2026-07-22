@@ -76,6 +76,8 @@ export default function Search() {
   const [vcMin, setVcMin] = useState(""); const [vcMax, setVcMax] = useState("");
   const [postMin, setPostMin] = useState("");
   const [src, setSrc] = useState("");
+  const [srcVal, setSrcVal] = useState("");
+  const [srcOpts, setSrcOpts] = useState<{ v: string; n: number }[]>([]);
   const [onmarket, setOnmarket] = useState(false);
   const [engaged, setEngaged] = useState(false);
   const [responsive, setResponsive] = useState(false);
@@ -127,6 +129,7 @@ export default function Search() {
     if (vcMax) q = q.lte("video_count", Number(vcMax));
     if (postMin) q = q.gte("posting_per_week", Number(postMin));
     if (src) q = q.eq("source_type", src);
+    if (srcVal) q = q.eq("source_value", srcVal);
     if (onmarket) q = q.gte("comment_lang_match", 0.5);
     if (engaged) q = q.gte("comment_substance_ratio", 0.6);
     if (responsive) q = q.gte("creator_reply_rate", 0.15);
@@ -134,7 +137,20 @@ export default function Search() {
     if (etype) q = q.eq("email_type", etype);
     if (exclWp) q = q.or("is_songpush_user.is.null,is_songpush_user.eq.false");
     return q as T;
-  }, [mode, pDeb, market, platform, category, format, follMin, follMax, erMin, erMax, viewsMin, persona, lang, speak, vcMin, vcMax, postMin, src, onmarket, engaged, responsive, adMin, etype, exclWp, contact]);
+  }, [mode, pDeb, market, platform, category, format, follMin, follMax, erMin, erMax, viewsMin, persona, lang, speak, vcMin, vcMax, postMin, src, srcVal, onmarket, engaged, responsive, adMin, etype, exclWp, contact]);
+
+  // When "Found via" type changes, load the specific sources (brands/hashtags/…) to pick from.
+  useEffect(() => {
+    setSrcVal("");
+    if (!src) { setSrcOpts([]); return; }
+    void (async () => {
+      const { data } = await supabase.from("source_overview")
+        .select("source_value,creators_found").eq("source_type", src)
+        .order("creators_found", { ascending: false }).limit(500);
+      setSrcOpts(((data ?? []) as { source_value: string; creators_found: number }[])
+        .filter(r => r.source_value).map(r => ({ v: r.source_value, n: r.creators_found })));
+    })();
+  }, [src]);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -244,6 +260,7 @@ export default function Search() {
               <div className="fsec">Contact &amp; business</div>
               <div className="field"><label>Last contacted</label><select value={contact} onChange={e => setContact(e.target.value)}><option value="">Any</option><option value="never">Never contacted</option><option value="30">30+ days ago</option><option value="60">60+ days ago</option><option value="90">90+ days ago</option></select></div>
               <div className="field"><label>Found via</label><select value={src} onChange={e => setSrc(e.target.value)}><option value="">Any source</option><option value="brand">Brand</option><option value="hashtag">Hashtag</option><option value="sound">Sound</option><option value="creator">Creator</option></select></div>
+              {src && <div className="field"><label>{src === "brand" ? "Which brand" : src === "hashtag" ? "Which hashtag" : src === "sound" ? "Which sound" : "Which creator"}</label><select value={srcVal} onChange={e => setSrcVal(e.target.value)}><option value="">{srcOpts.length ? `All ${src}s (${srcOpts.length})` : "Loading…"}</option>{srcOpts.map(o => <option key={o.v} value={o.v}>{o.v} · {o.n}</option>)}</select></div>}
               <div className="field"><label>Min paid collabs</label><input className="inp num" placeholder="e.g. 2" value={adMin} onChange={e => setAdMin(e.target.value)} /></div>
               <div className="field"><label>Email type</label><select value={etype} onChange={e => setEtype(e.target.value)}><option value="">Any</option><option value="management">Management</option><option value="freemail">Freemail</option><option value="business_email">Business</option></select></div>
               <div className="field check" style={{ gridColumn: "1/-1" }}><input type="checkbox" checked={exclWp} onChange={e => setExclWp(e.target.checked)} id="wpexcl" /><label htmlFor="wpexcl">Exclude existing WePush users</label></div>
