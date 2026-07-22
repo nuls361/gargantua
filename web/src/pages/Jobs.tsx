@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { extractBriefing } from "../lib/briefing";
 
 // Jobs — the campaign-driven outreach unit. A job holds a brief, the sample creators
 // the brand likes (→ lookalike match), earning, and targeting. Replaces working Lists.
@@ -122,6 +123,26 @@ function CreateJob({ onClose, onSaved, job }: { onClose: () => void; onSaved: (i
   const [follMax, setFollMax] = useState(job?.foll_max != null ? String(job.foll_max) : "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [docUrl, setDocUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [impErr, setImpErr] = useState<string | null>(null);
+
+  async function onFile(e: ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; e.target.value = "";
+    if (!f) return;
+    setImporting(true); setImpErr(null);
+    try { const t = await extractBriefing(f); setBriefing(b => b ? `${b}\n\n${t}` : t); }
+    catch (er) { setImpErr(er instanceof Error ? er.message : "Import failed"); }
+    setImporting(false);
+  }
+  async function importDoc() {
+    if (!docUrl.trim()) return;
+    setImporting(true); setImpErr(null);
+    const { data, error } = await supabase.functions.invoke("fetch-doc", { body: { url: docUrl.trim() } });
+    if (error || data?.error) setImpErr(error?.message || data?.error);
+    else { setBriefing(b => b ? `${b}\n\n${data.text}` : data.text); setDocUrl(""); }
+    setImporting(false);
+  }
 
   async function save() {
     if (!title.trim()) { setErr("Give the job a title."); return; }
@@ -151,7 +172,16 @@ function CreateJob({ onClose, onSaved, job }: { onClose: () => void; onSaved: (i
             {job && <div className="field"><label>Status</label><select value={status} onChange={e => setStatus(e.target.value)}><option value="draft">Draft</option><option value="active">Active</option><option value="paused">Paused</option><option value="closed">Closed</option></select></div>}
           </div>
           <div className="field"><label>Brand / artist / song</label><input className="inp" placeholder="ABOUT YOU" value={subject} onChange={e => setSubject(e.target.value)} /></div>
-          <div className="field"><label>Briefing</label><textarea className="inp" rows={5} placeholder="Paste the full brief — deliverable, hooks, do's & don'ts, voucher/CTA…" value={briefing} onChange={e => setBriefing(e.target.value)} /></div>
+          <div className="field">
+            <label>Briefing</label>
+            <div className="impbar">
+              <label className="impbtn">{importing ? "Importing…" : "📄 Upload .txt / .pdf"}<input type="file" accept=".txt,.md,.pdf" onChange={onFile} hidden /></label>
+              <input className="inp" style={{ flex: 1 }} placeholder="…or paste a Google Doc / URL" value={docUrl} onChange={e => setDocUrl(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void importDoc(); } }} />
+              <button type="button" className="dirbtn" style={{ width: "auto", padding: "0 12px", height: 34 }} onClick={importDoc} disabled={importing || !docUrl.trim()}>Import</button>
+            </div>
+            {impErr && <div className="notice err" style={{ marginTop: 0, marginBottom: 8 }}>{impErr}</div>}
+            <textarea className="inp" rows={6} placeholder="Paste the full brief, or import it above — deliverable, hooks, do's & don'ts, voucher/CTA…" value={briefing} onChange={e => setBriefing(e.target.value)} />
+          </div>
           <div className="field"><label>Sample creators the brand likes <span style={{ color: "var(--wp-muted)" }}>(handles or profile URLs, one per line → lookalike match)</span></label><textarea className="inp" rows={4} placeholder={"@thatsonyi\nhttps://www.tiktok.com/@alicelich\ncassyverse_"} value={samples} onChange={e => setSamples(e.target.value)} /></div>
           <div className="field"><label>Deliverable</label><input className="inp" placeholder="<30s video, strong hook, tag @aboutyou, voucher CTA" value={deliverable} onChange={e => setDeliverable(e.target.value)} /></div>
           <div className="fsec">Earning (WePush view-goal model)</div>
