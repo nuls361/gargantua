@@ -16,11 +16,12 @@ type Row = {
   email: string | null; email_type: string | null; email_difficulty: string | null; market: string | null;
   source_type: string | null; source_value: string | null; source_brand: string | null;
   is_songpush_user: boolean | null; songpush_admin_url: string | null; platform: string | null;
+  brands_worked_with: string[] | null; last_placement_at: string | null;
 };
 type WList = { id: string; name: string };
 
 const COLS =
-  "sec_uid,handle,display_name,bio,follower_count,engagement_median,avg_views,avg_views_pinned,posting_per_week,video_count,sponsored_count,avatar_url,category,category_secondary,content_format,persona,audience_lang,original_sound_ratio,comment_substance_ratio,comment_lang_match,creator_reply_rate,top_hashtags,profile_summary,email,email_type,email_difficulty,market,source_type,source_value,source_brand,is_songpush_user,songpush_admin_url,platform";
+  "sec_uid,handle,display_name,bio,follower_count,engagement_median,avg_views,avg_views_pinned,posting_per_week,video_count,sponsored_count,avatar_url,category,category_secondary,content_format,persona,audience_lang,original_sound_ratio,comment_substance_ratio,comment_lang_match,creator_reply_rate,top_hashtags,profile_summary,email,email_type,email_difficulty,market,source_type,source_value,source_brand,is_songpush_user,songpush_admin_url,platform,brands_worked_with,last_placement_at";
 const PAGE = 25;
 const TOPICS = ["beauty","wellness","fitness","fashion","food","travel","gaming","tech","finance","music","comedy","parenting","home & interior","sustainability","relationship","dance","pets","cars","education","art","lifestyle"];
 const FORMATS = ["grwm","tutorial","vlog","day-in-life","storytime","talking-head","pov","skit","haul","review","recipe","transformation","dance","lip-sync","get-ready","unboxing","asmr"];

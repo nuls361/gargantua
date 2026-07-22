@@ -255,7 +255,6 @@ function JobDetail({ id }: { id: string }) {
       <div className="listhead" style={{ marginTop: 16 }}>
         <b>{members.length}</b><span>leads</span>
         <span className="grow" />
-        <Link className="dirbtn" style={{ width: "auto", padding: "0 12px", textDecoration: "none", display: "inline-flex", alignItems: "center" }} to="/search">＋ Source in Search</Link>
         <button className="sbtn2" onClick={generate} disabled={!members.length || generating}>
           <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l1.6 4.4L18 8l-4.4 1.6L12 14l-1.6-4.4L6 8l4.4-1.6L12 2z"/></svg>{generating ? "Generating…" : "Generate emails"}
         </button>

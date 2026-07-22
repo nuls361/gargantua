@@ -11,10 +11,11 @@ export type Row = {
   email: string | null; email_type: string | null; email_difficulty: string | null; market: string | null;
   source_type: string | null; source_value: string | null; source_brand: string | null;
   is_songpush_user: boolean | null; songpush_admin_url: string | null; platform: string | null;
+  brands_worked_with: string[] | null; last_placement_at: string | null;
 };
 
 export const COLS =
-  "sec_uid,handle,display_name,bio,follower_count,engagement_median,avg_views,avg_views_pinned,posting_per_week,video_count,sponsored_count,avatar_url,category,category_secondary,content_format,persona,audience_lang,original_sound_ratio,comment_substance_ratio,comment_lang_match,creator_reply_rate,top_hashtags,profile_summary,email,email_type,email_difficulty,market,source_type,source_value,source_brand,is_songpush_user,songpush_admin_url,platform";
+  "sec_uid,handle,display_name,bio,follower_count,engagement_median,avg_views,avg_views_pinned,posting_per_week,video_count,sponsored_count,avatar_url,category,category_secondary,content_format,persona,audience_lang,original_sound_ratio,comment_substance_ratio,comment_lang_match,creator_reply_rate,top_hashtags,profile_summary,email,email_type,email_difficulty,market,source_type,source_value,source_brand,is_songpush_user,songpush_admin_url,platform,brands_worked_with,last_placement_at";
 
 export const CAT_HUE: Record<string, number> = { beauty:330,wellness:160,fitness:14,fashion:280,food:26,travel:200,gaming:250,tech:210,finance:150,music:190,comedy:45,parenting:340,"home & interior":175,sustainability:135,relationship:350,dance:300,pets:32,cars:220,education:230,art:265,lifestyle:255 };
 export const LANG: Record<string, string> = { de:"German", en:"English", mixed:"Mixed", un:"unclear" };
@@ -149,7 +150,7 @@ export function Detail({ r, onClose, email }: { r: Row; onClose: () => void; ema
           <div className="sec-t">Contact &amp; business</div>
           <div className="contact">
             <div className="cr"><div className="ci"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></div><div className="cx"><div className="k">Email</div><div className="v">{r.email || "—"}</div></div>{r.email_type && <span className={"tag-em " + emClass}>{emLabel}</span>}{r.email_difficulty && DIFF[r.email_difficulty] && <span title="Cold-email deliverability" style={{ background: DIFF[r.email_difficulty].color, color: "#fff", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, whiteSpace: "nowrap", marginLeft: 6 }}>{DIFF[r.email_difficulty].label}</span>}</div>
-            <div className="cr"><div className="ci"><svg viewBox="0 0 24 24"><path d="M20 7h-9M14 17H5M17 3l4 4-4 4M7 21l-4-4 4-4"/></svg></div><div className="cx"><div className="k">Ad experience</div><div className="v">{adNote}</div></div></div>
+            <div className="cr"><div className="ci"><svg viewBox="0 0 24 24"><path d="M20 7h-9M14 17H5M17 3l4 4-4 4M7 21l-4-4 4-4"/></svg></div><div className="cx"><div className="k">Brand experience</div><div className="v">{adNote}{r.last_placement_at ? ` · last placement ${r.last_placement_at}` : ""}</div>{(r.brands_worked_with || []).length > 0 && <div className="tagrow" style={{ marginTop: 6 }}>{(r.brands_worked_with || []).map(b => <span key={b} className="pill ghost">{b}</span>)}</div>}</div></div>
             {(r.source_value || r.source_brand) && <div className="cr"><div className="ci"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg></div><div className="cx"><div className="k">Found via</div><div className="v">{r.source_value || r.source_brand}</div></div></div>}
           </div>
         </div>

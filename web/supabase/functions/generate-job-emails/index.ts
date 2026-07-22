@@ -24,6 +24,7 @@ interface Creator {
   sec_uid: string; handle: string; display_name: string | null; category: string | null;
   market: string | null; follower_count: number | null; audience_lang: string | null;
   content_format: string[] | null; profile_summary: string | null;
+  sponsored_count: number | null; brands_worked_with: string[] | null; last_placement_at: string | null;
 }
 
 function sys(job: Job): string {
@@ -48,11 +49,20 @@ STRICT RULES (deliverability + trust):
 Return ONLY JSON: {"subject": "<2-4 lowercase words>", "icebreaker": "<first line, on their content>", "pitch": "<value + soft CTA + opt-out>"}`;
 }
 
+function brandExp(c: Creator): string {
+  const n = c.sponsored_count ?? 0;
+  if (!n) return "No brand collaborations detected — likely new to paid partnerships (reassure: easy, no experience needed).";
+  const brands = (c.brands_worked_with ?? []).slice(0, 4).join(", ");
+  const recency = c.last_placement_at ? ` Last placement ~${c.last_placement_at}.` : "";
+  return `Ad-experienced: ~${n} paid brand collabs detected${brands ? ` (e.g. ${brands})` : ""}.${recency} They already know how paid collabs work — treat them as a pro, don't over-explain. Do NOT name a competing brand.`;
+}
+
 function usr(c: Creator): string {
   return `Creator: @${c.handle}${c.display_name ? ` (${c.display_name})` : ""}
 Niche: ${c.category ?? "—"} | Market: ${c.market ?? "—"} | Audience language: ${c.audience_lang ?? "—"} | Followers: ${c.follower_count ?? "—"}
 Content formats: ${(c.content_format ?? []).join(", ") || "—"}
 Profile: ${c.profile_summary ?? "—"}
+Brand experience: ${brandExp(c)}
 
 Write the personalized email as JSON.`;
 }
@@ -79,7 +89,7 @@ Deno.serve(async (req) => {
     if (!ids.length) return json({ emails: [] });
 
     const { data: creators } = await sb.from("tt_creators")
-      .select("sec_uid,handle,display_name,category,market,follower_count,audience_lang,content_format,profile_summary")
+      .select("sec_uid,handle,display_name,category,market,follower_count,audience_lang,content_format,profile_summary,sponsored_count,brands_worked_with,last_placement_at")
       .in("sec_uid", ids);
 
     const system = sys(job as Job);
