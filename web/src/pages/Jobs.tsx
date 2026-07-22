@@ -9,10 +9,7 @@ import { Detail, Mono, PlatIcon, erClass, fmt, profileUrl, DIFF, PERSONA, COLS, 
 
 type Job = {
   id: string; title: string; status: string; subject: string | null; briefing: string | null;
-  sample_creators: string[] | null; deliverable: string | null;
-  earning_model: string | null; earning_min: number | null; earning_max: number | null; view_goal: number | null;
-  target_market: string | null; foll_min: number | null; foll_max: number | null;
-  instantly_campaign_id: string | null; created_at: string;
+  earning_min: number | null; earning_max: number | null; created_at: string;
   campaign_google: string | null; campaign_outlook: string | null; campaign_custom: string | null;
 };
 type Campaign = { instantly_campaign_id: string; name: string };

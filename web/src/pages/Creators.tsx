@@ -2,8 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { Detail } from "../components/CreatorPanel";
 
-// Search — the one creator database, redesigned (scoped under .wp). Semantic (keyword over the
-// AI profile_summary until embeddings land) ⇄ Filters. Take top N → send to a list (deduped).
+// Search — the one creator database. Semantic (embeddings) / factual filters / lookalike filter.
 
 type Row = {
   sec_uid: string; handle: string; display_name: string | null; bio: string | null;
@@ -18,7 +17,7 @@ type Row = {
   is_songpush_user: boolean | null; songpush_admin_url: string | null; platform: string | null;
   brands_worked_with: string[] | null; last_placement_at: string | null;
 };
-type WList = { id: string; name: string };
+type JobOpt = { id: string; name: string };
 
 const COLS =
   "sec_uid,handle,display_name,bio,follower_count,engagement_median,avg_views,avg_views_pinned,posting_per_week,video_count,sponsored_count,avatar_url,category,category_secondary,content_format,persona,audience_lang,original_sound_ratio,comment_substance_ratio,comment_lang_match,creator_reply_rate,top_hashtags,profile_summary,email,email_type,email_difficulty,market,source_type,source_value,source_brand,is_songpush_user,songpush_admin_url,platform,brands_worked_with,last_placement_at";
@@ -116,9 +115,9 @@ export default function Search() {
 
   // take + send
   const [takeN, setTakeN] = useState("");
-  const [listSel, setListSel] = useState("__new");
-  const [newName, setNewName] = useState("");
-  const [workingLists, setWorkingLists] = useState<WList[]>([]);
+  const [jobSel, setJobSel] = useState("__new");
+  const [newJobTitle, setNewJobTitle] = useState("");
+  const [jobOpts, setJobOpts] = useState<JobOpt[]>([]);
   const [sending, setSending] = useState(false);
 
   const [panel, setPanel] = useState<Row | null>(null);
@@ -127,11 +126,11 @@ export default function Search() {
   useEffect(() => { const t = setTimeout(() => setLookDeb(lookalike), 400); return () => clearTimeout(t); }, [lookalike]);
   const lookHandles = parseHandles(lookDeb);
   const lookActive = lookHandles.length > 0;
-  const loadLists = useCallback(() => {
+  const loadJobOpts = useCallback(() => {
     supabase.from("jobs").select("id,title").order("created_at", { ascending: false })
-      .then(({ data }) => setWorkingLists(((data ?? []) as { id: string; title: string }[]).map(j => ({ id: j.id, name: j.title }))));
+      .then(({ data }) => setJobOpts(((data ?? []) as { id: string; title: string }[]).map(j => ({ id: j.id, name: j.title }))));
   }, []);
-  useEffect(() => { loadLists(); }, [loadLists]);
+  useEffect(() => { loadJobOpts(); }, [loadJobOpts]);
   // Deep-link from a job's "Find lookalikes →": prefill the lookalike filter.
   useEffect(() => {
     const like = new URLSearchParams(window.location.search).get("like");
@@ -273,12 +272,12 @@ export default function Search() {
     setSending(true); setError(null); setNotice(null);
     try {
       let jobId = ""; let jobName = "";
-      if (listSel === "__new") {
-        const name = newName.trim(); if (!name) throw new Error("Enter a job title.");
+      if (jobSel === "__new") {
+        const name = newJobTitle.trim(); if (!name) throw new Error("Enter a job title.");
         const { data, error } = await supabase.from("jobs").insert({ title: name }).select("id,title").single();
         if (error) throw error; jobId = data.id; jobName = data.title;
       } else {
-        jobId = listSel; jobName = workingLists.find(l => l.id === listSel)?.name ?? "job";
+        jobId = jobSel; jobName = jobOpts.find(l => l.id === jobSel)?.name ?? "job";
       }
       const cap = takeN ? Math.max(1, Number(takeN)) : 5000;
       const sk = sortKey === "fit" ? "follower_count" : sortKey;
@@ -313,7 +312,7 @@ export default function Search() {
         if (e2) throw e2; inserted += ins?.length ?? 0;
       }
       setNotice(`Added ${inserted} to “${jobName}”.`);
-      setNewName(""); loadLists();
+      setNewJobTitle(""); loadJobOpts();
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     setSending(false);
   }
@@ -396,11 +395,11 @@ export default function Search() {
         <b>{total.toLocaleString("en-GB")}</b><span>creators</span>
         <span className="grow" />
         <label className="takebox">Take top<input className="takeinp num" placeholder="all" value={takeN} onChange={e => setTakeN(e.target.value)} /></label>
-        <select className="listsel" value={listSel} onChange={e => setListSel(e.target.value)}>
+        <select className="listsel" value={jobSel} onChange={e => setJobSel(e.target.value)}>
           <option value="__new">＋ New job…</option>
-          {workingLists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+          {jobOpts.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
-        {listSel === "__new" && <input className="listsel" style={{ maxWidth: 150 }} placeholder="Job title…" value={newName} onChange={e => setNewName(e.target.value)} />}
+        {jobSel === "__new" && <input className="listsel" style={{ maxWidth: 150 }} placeholder="Job title…" value={newJobTitle} onChange={e => setNewJobTitle(e.target.value)} />}
         <button className="sbtn2" onClick={send} disabled={sending || total === 0}>
           <svg viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>{sending ? "Adding…" : "Add to job"}
         </button>
