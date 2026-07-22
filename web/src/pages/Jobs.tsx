@@ -61,7 +61,6 @@ function JobsList() {
               </div>
               <div className="metrics">
                 <div className="metric"><div className="v num">{j.earning_min != null || j.earning_max != null ? `€${j.earning_min ?? 0}–${j.earning_max ?? "?"}` : "—"}</div><div className="k">Payout</div></div>
-                <div className="metric"><div className="v num">{(j.sample_creators || []).length}</div><div className="k">Samples</div></div>
               </div>
             </Link>
           ))}
