@@ -225,7 +225,8 @@ function JobDetail({ id }: { id: string }) {
       <Link to="/jobs" className="backlink">← Jobs</Link>
       <div className="eyebrow">{job.subject || "Job"}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <h1 style={{ flex: 1 }}>{job.title}<span className="pill" style={{ background: STATUS[job.status] || "#8A8F9C", color: "#fff", marginLeft: 10, fontSize: 13, verticalAlign: "middle" }}>{job.status}</span></h1>
+        <h1 style={{ flex: 1 }}>{job.title}</h1>
+        <span className="pill" title="Synced from the linked Instantly campaigns" style={{ background: STATUS[job.status] || "#8A8F9C", color: "#fff", fontSize: 13, padding: "5px 12px" }}>{job.status}</span>
         <button className="dirbtn" style={{ width: "auto", padding: "0 14px", height: 34 }} onClick={() => setEditing(true)}>Edit job</button>
       </div>
       {editing && <CreateJob job={job} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await reloadJob(); }} />}
