@@ -54,7 +54,7 @@ export default function Search() {
   const [adv, setAdv] = useState(false);
 
   // filters
-  const [market, setMarket] = useState("dach");
+  const [market, setMarket] = useState("");
   const [platform, setPlatform] = useState("");
   const [category, setCategory] = useState("");
   const [format, setFormat] = useState("");

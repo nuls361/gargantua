@@ -46,7 +46,7 @@ export default function Dashboard() {
       setPersonas(c.filter(x => x.n > 0).sort((a, b) => b.n - a.n));
     })();
     void (async () => {
-      const { data } = await supabase.rpc("leads_by_day");
+      const { data } = await supabase.rpc("tt_creators_by_day");
       setSeries(((data ?? []) as { day: string; n: number }[]).map(d => ({ day: d.day, n: Number(d.n) })));
       setChartLoading(false);
     })();
@@ -76,7 +76,7 @@ export default function Dashboard() {
 
       <div className="grid2">
         <div className="panelc">
-          <div className="phead"><div><div className="pt">Leads growth</div><div className="pts">Cumulative leads added to the CRM</div></div></div>
+          <div className="phead"><div><div className="pt">Database growth</div><div className="pts">Cumulative creators in the pool</div></div></div>
           {chartLoading ? <div className="empty">Loading chart…</div> : <GrowthChart data={series} />}
         </div>
         <div className="panelc">
