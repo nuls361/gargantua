@@ -12,20 +12,31 @@ type Row = {
   persona: string | null; audience_lang: string | null; original_sound_ratio: number | null;
   comment_substance_ratio: number | null; comment_lang_match: number | null; creator_reply_rate: number | null;
   top_hashtags: string[] | null; profile_summary: string | null;
-  email: string | null; email_type: string | null; market: string | null;
+  email: string | null; email_type: string | null; email_difficulty: string | null; market: string | null;
   source_type: string | null; source_value: string | null; source_brand: string | null;
   is_songpush_user: boolean | null; songpush_admin_url: string | null; platform: string | null;
 };
 type WList = { id: string; name: string };
 
 const COLS =
-  "sec_uid,handle,display_name,bio,follower_count,engagement_median,avg_views,avg_views_pinned,posting_per_week,video_count,sponsored_count,avatar_url,category,category_secondary,content_format,persona,audience_lang,original_sound_ratio,comment_substance_ratio,comment_lang_match,creator_reply_rate,top_hashtags,profile_summary,email,email_type,market,source_type,source_value,source_brand,is_songpush_user,songpush_admin_url,platform";
+  "sec_uid,handle,display_name,bio,follower_count,engagement_median,avg_views,avg_views_pinned,posting_per_week,video_count,sponsored_count,avatar_url,category,category_secondary,content_format,persona,audience_lang,original_sound_ratio,comment_substance_ratio,comment_lang_match,creator_reply_rate,top_hashtags,profile_summary,email,email_type,email_difficulty,market,source_type,source_value,source_brand,is_songpush_user,songpush_admin_url,platform";
 const PAGE = 25;
 const TOPICS = ["beauty","wellness","fitness","fashion","food","travel","gaming","tech","finance","music","comedy","parenting","home & interior","sustainability","relationship","dance","pets","cars","education","art","lifestyle"];
 const FORMATS = ["grwm","tutorial","vlog","day-in-life","storytime","talking-head","pov","skit","haul","review","recipe","transformation","dance","lip-sync","get-ready","unboxing","asmr"];
 const CAT_HUE: Record<string, number> = { beauty:330,wellness:160,fitness:14,fashion:280,food:26,travel:200,gaming:250,tech:210,finance:150,music:190,comedy:45,parenting:340,"home & interior":175,sustainability:135,relationship:350,dance:300,pets:32,cars:220,education:230,art:265,lifestyle:255 };
 const LANG: Record<string, string> = { de:"German", en:"English", mixed:"Mixed", un:"unclear" };
 const PERSONA: Record<string, string> = { solo:"Solo", couple:"Couple", family:"Family", group:"Group" };
+// Cold-email deliverability by recipient provider (easiest → hardest). Label + colour.
+const DIFF_ORDER = ["very_easy","easy","easy_medium","medium","hard","very_hard","skip"];
+const DIFF: Record<string, { label: string; color: string }> = {
+  very_easy:   { label: "Very easy",   color: "#12A150" },
+  easy:        { label: "Easy",        color: "#4E9F2E" },
+  easy_medium: { label: "Easy–med",    color: "#8A9A1B" },
+  medium:      { label: "Medium",      color: "#C2860B" },
+  hard:        { label: "Hard",        color: "#D9600F" },
+  very_hard:   { label: "Very hard",   color: "#C0341D" },
+  skip:        { label: "Skip · t-online", color: "#6B7280" },
+};
 
 const fmt = (n: number | null) => n == null ? "—" : n >= 1e6 ? `${(n/1e6).toFixed(n>=1e7?0:1).replace(/\.0$/,"")}m` : n >= 1e3 ? `${(n/1e3).toFixed(n>=1e5?0:1).replace(/\.0$/,"")}k` : `${n}`;
 const pct = (x: number | null) => x == null ? "—" : `${Math.round(x*100)}%`;
@@ -87,6 +98,7 @@ export default function Search() {
   const [etype, setEtype] = useState("");
   const [exclWp, setExclWp] = useState(false);
   const [contact, setContact] = useState("");
+  const [emailDiff, setEmailDiff] = useState("");
   const [sortKey, setSortKey] = useState("fit");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -136,9 +148,10 @@ export default function Search() {
     if (responsive) q = q.gte("creator_reply_rate", 0.15);
     if (adMin) q = q.gte("sponsored_count", Number(adMin));
     if (etype) q = q.eq("email_type", etype);
+    if (emailDiff) q = q.in("email_difficulty", DIFF_ORDER.slice(0, DIFF_ORDER.indexOf(emailDiff) + 1));
     if (exclWp) q = q.or("is_songpush_user.is.null,is_songpush_user.eq.false");
     return q as T;
-  }, [mode, pDeb, semIds, market, platform, category, format, follMin, follMax, erMin, erMax, viewsMin, persona, lang, speak, vcMin, vcMax, postMin, src, srcVal, onmarket, engaged, responsive, adMin, etype, exclWp, contact]);
+  }, [mode, pDeb, semIds, market, platform, category, format, follMin, follMax, erMin, erMax, viewsMin, persona, lang, speak, vcMin, vcMax, postMin, src, srcVal, onmarket, engaged, responsive, adMin, etype, emailDiff, exclWp, contact]);
 
   // Semantic search: embed the prompt server-side (OpenAI, via the edge fn) and
   // get back the cosine-nearest creators, ranked. semIds drives withFilters above.
@@ -323,6 +336,7 @@ export default function Search() {
               {src && <div className="field"><label>{src === "brand" ? "Which brand" : src === "hashtag" ? "Which hashtag" : src === "sound" ? "Which sound" : "Which creator"}</label><select value={srcVal} onChange={e => setSrcVal(e.target.value)}><option value="">{srcOpts.length ? `All ${src}s (${srcOpts.length})` : "Loading…"}</option>{srcOpts.map(o => <option key={o.v} value={o.v}>{o.v} · {o.n}</option>)}</select></div>}
               <div className="field"><label>Min paid collabs</label><input className="inp num" placeholder="e.g. 2" value={adMin} onChange={e => setAdMin(e.target.value)} /></div>
               <div className="field"><label>Email type</label><select value={etype} onChange={e => setEtype(e.target.value)}><option value="">Any</option><option value="management">Management</option><option value="freemail">Freemail</option><option value="business_email">Business</option></select></div>
+              <div className="field"><label>Deliverability</label><select value={emailDiff} onChange={e => setEmailDiff(e.target.value)}><option value="">Any provider</option><option value="very_easy">Very easy only</option><option value="easy">≤ Easy</option><option value="easy_medium">≤ Easy–medium</option><option value="medium">≤ Medium</option><option value="hard">≤ Hard (no Microsoft / t-online)</option><option value="very_hard">Exclude t-online</option></select></div>
               <div className="field check" style={{ gridColumn: "1/-1" }}><input type="checkbox" checked={exclWp} onChange={e => setExclWp(e.target.checked)} id="wpexcl" /><label htmlFor="wpexcl">Exclude existing WePush users</label></div>
             </div>
           )}
@@ -375,7 +389,7 @@ export default function Search() {
                 <div className="metric"><div className="v num">{fmt(r.follower_count)}</div><div className="k">Followers</div></div>
                 <div className="metric"><div className={"v num " + erClass(r.engagement_median)}>{r.engagement_median ?? "—"}%</div><div className="k">ER</div></div>
                 <div className="metric"><div className="v num">{fmt(r.avg_views)}</div><div className="k">Avg views</div></div>
-                {r.email && <span className="mail-dot" title="Email available" />}
+                {r.email && <span className="mail-dot" title={r.email_difficulty && DIFF[r.email_difficulty] ? `Email · ${DIFF[r.email_difficulty].label} to reach` : "Email available"} style={r.email_difficulty && DIFF[r.email_difficulty] ? { background: DIFF[r.email_difficulty].color } : undefined} />}
                 <a className="iconbtn" href={r.is_songpush_user && r.songpush_admin_url ? r.songpush_admin_url : profileUrl(r)} target="_blank" rel="noreferrer" title="Open profile" onClick={e => e.stopPropagation()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
               </div>
             </div>
@@ -486,7 +500,7 @@ function Detail({ r, onClose, marketFlag }: { r: Row; onClose: () => void; marke
         <div>
           <div className="sec-t">Contact &amp; business</div>
           <div className="contact">
-            <div className="cr"><div className="ci"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></div><div className="cx"><div className="k">Email</div><div className="v">{r.email || "—"}</div></div>{r.email_type && <span className={"tag-em " + emClass}>{emLabel}</span>}</div>
+            <div className="cr"><div className="ci"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></div><div className="cx"><div className="k">Email</div><div className="v">{r.email || "—"}</div></div>{r.email_type && <span className={"tag-em " + emClass}>{emLabel}</span>}{r.email_difficulty && DIFF[r.email_difficulty] && <span title="Cold-email deliverability" style={{ background: DIFF[r.email_difficulty].color, color: "#fff", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, whiteSpace: "nowrap", marginLeft: 6 }}>{DIFF[r.email_difficulty].label}</span>}</div>
             <div className="cr"><div className="ci"><svg viewBox="0 0 24 24"><path d="M20 7h-9M14 17H5M17 3l4 4-4 4M7 21l-4-4 4-4"/></svg></div><div className="cx"><div className="k">Ad experience</div><div className="v">{adNote}</div></div></div>
             {(r.source_value || r.source_brand) && <div className="cr"><div className="ci"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg></div><div className="cx"><div className="k">Found via</div><div className="v">{r.source_value || r.source_brand}</div></div></div>}
           </div>
