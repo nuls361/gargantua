@@ -60,6 +60,8 @@ export default function Search() {
   const [mode, setMode] = useState<"semantic" | "factual">("semantic");
   const [prompt, setPrompt] = useState("");
   const [pDeb, setPDeb] = useState("");
+  const [semIds, setSemIds] = useState<string[]>([]);
+  const [semLoading, setSemLoading] = useState(false);
   const [adv, setAdv] = useState(false);
 
   // filters
@@ -85,7 +87,7 @@ export default function Search() {
   const [etype, setEtype] = useState("");
   const [exclWp, setExclWp] = useState(false);
   const [contact, setContact] = useState("");
-  const [sortKey, setSortKey] = useState("follower_count");
+  const [sortKey, setSortKey] = useState("fit");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   // take + send
@@ -107,11 +109,10 @@ export default function Search() {
     let q = qb as any;
     if (contact === "never") q = q.is("last_contacted_at", null);
     else if (contact) q = q.lte("last_contacted_at", new Date(Date.now() - Number(contact) * 86400000).toISOString());
-    if (mode === "semantic") {
-      const p = pDeb.trim();
-      if (p) q = q.textSearch("summary_fts", p, { type: "websearch" });
-      if (market) q = q.eq("market", market);
-      return q as T;
+    // Semantic mode: constrain to the AI-ranked nearest creators, then let the
+    // same factual filters below refine them (market, follower band, ER, …).
+    if (mode === "semantic" && pDeb.trim()) {
+      q = q.in("sec_uid", semIds.length ? semIds : ["__none__"]);
     }
     if (market) q = q.eq("market", market);
     if (platform) q = q.eq("platform", platform);
@@ -137,7 +138,25 @@ export default function Search() {
     if (etype) q = q.eq("email_type", etype);
     if (exclWp) q = q.or("is_songpush_user.is.null,is_songpush_user.eq.false");
     return q as T;
-  }, [mode, pDeb, market, platform, category, format, follMin, follMax, erMin, erMax, viewsMin, persona, lang, speak, vcMin, vcMax, postMin, src, srcVal, onmarket, engaged, responsive, adMin, etype, exclWp, contact]);
+  }, [mode, pDeb, semIds, market, platform, category, format, follMin, follMax, erMin, erMax, viewsMin, persona, lang, speak, vcMin, vcMax, postMin, src, srcVal, onmarket, engaged, responsive, adMin, etype, exclWp, contact]);
+
+  // Semantic search: embed the prompt server-side (OpenAI, via the edge fn) and
+  // get back the cosine-nearest creators, ranked. semIds drives withFilters above.
+  useEffect(() => {
+    if (mode !== "semantic") { setSemIds([]); return; }
+    const p = pDeb.trim();
+    if (!p) { setSemIds([]); return; }
+    let cancelled = false;
+    setSemLoading(true);
+    void (async () => {
+      const { data, error: err } = await supabase.functions.invoke("semantic-search", { body: { prompt: p, match_count: 400 } });
+      if (cancelled) return;
+      if (err) { setError(err.message); setSemIds([]); }
+      else setSemIds((data?.ids ?? []) as string[]);
+      setSemLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [mode, pDeb]);
 
   // When "Found via" type changes, load the specific sources (brands/hashtags/…) to pick from.
   useEffect(() => {
@@ -155,6 +174,30 @@ export default function Search() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     const sk = sortKey === "fit" ? "follower_count" : sortKey;
+    const semActive = mode === "semantic" && pDeb.trim().length > 0;
+
+    if (semActive) {
+      // Wait for / handle the AI ranking, then sort + paginate client-side so
+      // "Best match" preserves cosine relevance (Postgres can't order by an id list).
+      if (!semIds.length) { setRows([]); setTotal(0); setLoading(false); return; }
+      const { data, error: err } = await withFilters(supabase.from("tt_creators_x").select(COLS)).limit(500);
+      if (err) { setError(err.message); setRows([]); setTotal(0); setLoading(false); return; }
+      let rs = (data ?? []) as Row[];
+      if (sortKey === "fit") {
+        const rank = new Map(semIds.map((id, i) => [id, i]));
+        rs = rs.slice().sort((a, b) => (rank.get(a.sec_uid) ?? 1e9) - (rank.get(b.sec_uid) ?? 1e9));
+      } else {
+        rs = rs.slice().sort((a, b) => {
+          const av = Number((a as Record<string, unknown>)[sk] ?? 0), bv = Number((b as Record<string, unknown>)[sk] ?? 0);
+          return sortDir === "asc" ? av - bv : bv - av;
+        });
+      }
+      setTotal(rs.length);
+      setRows(rs.slice(page * PAGE, page * PAGE + PAGE));
+      setLoading(false);
+      return;
+    }
+
     const q = withFilters(supabase.from("tt_creators_x").select(COLS, { count: "exact" }))
       .order(sk, { ascending: sortDir === "asc", nullsFirst: false })
       .range(page * PAGE, page * PAGE + PAGE - 1);
@@ -162,7 +205,7 @@ export default function Search() {
     if (err) setError(err.message);
     else { setRows((data ?? []) as Row[]); setTotal(count ?? 0); }
     setLoading(false);
-  }, [withFilters, sortKey, sortDir, page]);
+  }, [withFilters, sortKey, sortDir, page, mode, pDeb, semIds]);
 
   useEffect(() => { setPage(0); }, [withFilters, sortKey, sortDir]);
   useEffect(() => { void load(); }, [load]);
@@ -180,10 +223,27 @@ export default function Search() {
       }
       const cap = takeN ? Math.max(1, Number(takeN)) : 5000;
       const sk = sortKey === "fit" ? "follower_count" : sortKey;
-      const { data, error } = await withFilters(supabase.from("tt_creators_x").select(COLS))
-        .order(sk, { ascending: sortDir === "asc", nullsFirst: false }).limit(cap);
-      if (error) throw error;
-      const srcRows = (data ?? []) as Row[];
+      let srcRows: Row[];
+      if (mode === "semantic" && pDeb.trim()) {
+        const { data, error } = await withFilters(supabase.from("tt_creators_x").select(COLS)).limit(500);
+        if (error) throw error;
+        let rs = (data ?? []) as Row[];
+        if (sortKey === "fit") {
+          const rank = new Map(semIds.map((id, i) => [id, i]));
+          rs = rs.slice().sort((a, b) => (rank.get(a.sec_uid) ?? 1e9) - (rank.get(b.sec_uid) ?? 1e9));
+        } else {
+          rs = rs.slice().sort((a, b) => {
+            const av = Number((a as Record<string, unknown>)[sk] ?? 0), bv = Number((b as Record<string, unknown>)[sk] ?? 0);
+            return sortDir === "asc" ? av - bv : bv - av;
+          });
+        }
+        srcRows = rs.slice(0, cap);
+      } else {
+        const { data, error } = await withFilters(supabase.from("tt_creators_x").select(COLS))
+          .order(sk, { ascending: sortDir === "asc", nullsFirst: false }).limit(cap);
+        if (error) throw error;
+        srcRows = (data ?? []) as Row[];
+      }
       if (!srcRows.length) throw new Error("Nothing to send.");
       const now = new Date().toISOString();
       const crows = srcRows.map(r => ({
@@ -296,8 +356,8 @@ export default function Search() {
       </div>
 
       <div className="rows">
-        {loading ? <div className="empty">Loading…</div>
-          : rows.length === 0 ? <div className="empty">No creators for this search.</div>
+        {loading || semLoading ? <div className="empty">{semLoading ? "AI is ranking creators…" : "Loading…"}</div>
+          : rows.length === 0 ? <div className="empty">{mode === "semantic" && !pDeb.trim() ? "Describe who you're looking for above." : "No creators for this search."}</div>
           : rows.map(r => (
             <div key={r.sec_uid} className={"crow" + (r.is_songpush_user ? " wepush" : "")} onClick={() => setPanel(r)}>
               <Mono r={r} />
