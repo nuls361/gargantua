@@ -260,10 +260,8 @@ function JobDetail({ id }: { id: string }) {
       {editing && <CreateJob job={job} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await reloadJob(); }} />}
 
       <div className="jobmeta">
-        {(job.earning_min != null || job.earning_max != null) && <div className="jm"><div className="k">Payout</div><div className="v">€{job.earning_min ?? 0}–{job.earning_max ?? "?"}</div></div>}
-        {job.view_goal != null && <div className="jm"><div className="k">View goal</div><div className="v">{fmt(job.view_goal)}</div></div>}
-        <div className="jm"><div className="k">Members</div><div className="v">{members.length}</div></div>
-        <div className="jm"><div className="k">Campaigns set</div><div className="v">{[job.campaign_google, job.campaign_outlook, job.campaign_custom].filter(Boolean).length}/3</div></div>
+        <div className="jm"><div className="k">Leads</div><div className="v">{members.length.toLocaleString("en-GB")}</div></div>
+        <div className="jm"><div className="k">Approx. new users</div><div className="v" style={{ color: "var(--wp-good)" }}>≈ {Math.round(members.length * 0.025).toLocaleString("en-GB")}</div></div>
       </div>
 
       {job.briefing && <details className="jobbrief"><summary><b>Briefing</b></summary><div style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>{job.briefing}</div></details>}
@@ -283,7 +281,7 @@ function JobDetail({ id }: { id: string }) {
       </div>
 
       <div className="listhead" style={{ marginTop: 16 }}>
-        <b>{members.length}</b><span>members</span>
+        <b>{members.length}</b><span>leads</span>
         <span className="grow" />
         <Link className="dirbtn" style={{ width: "auto", padding: "0 12px", textDecoration: "none", display: "inline-flex", alignItems: "center" }} to="/search">＋ Source in Search</Link>
         <button className="sbtn2" onClick={generate} disabled={!members.length || generating}>
@@ -294,7 +292,7 @@ function JobDetail({ id }: { id: string }) {
       {notice && <div className="notice">{notice}</div>}
 
       <div className="rows">
-        {members.length === 0 ? <div className="empty">No members yet. Source creators in <Link to="/search" style={{ color: "var(--wp-accink)" }}>Search</Link> (semantic, filters, or lookalike) and “Add to job”.</div>
+        {members.length === 0 ? <div className="empty">No leads yet. Source creators in <Link to="/search" style={{ color: "var(--wp-accink)" }}>Search</Link> (semantic, filters, or lookalike) and “Add to job”.</div>
           : members.map(m => {
             const em = emails[m.sec_uid];
             const isOpen = open === m.sec_uid;
