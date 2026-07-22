@@ -6,8 +6,8 @@ import { supabase } from "../lib/supabase";
 
 type Row = {
   sec_uid: string; handle: string; display_name: string | null; bio: string | null;
-  follower_count: number | null; engagement_median: number | null; avg_views: number | null;
-  posting_per_week: number | null; video_count: number | null; sponsored_count: number | null;
+  follower_count: number | null; engagement_median: number | null; avg_views: number | null; avg_views_pinned: number | null;
+  posting_per_week: number | null; video_count: number | null; sponsored_count: number | null; avatar_url: string | null;
   category: string | null; category_secondary: string | null; content_format: string[] | null;
   persona: string | null; audience_lang: string | null; original_sound_ratio: number | null;
   comment_substance_ratio: number | null; comment_lang_match: number | null; creator_reply_rate: number | null;
@@ -19,7 +19,7 @@ type Row = {
 type WList = { id: string; name: string };
 
 const COLS =
-  "sec_uid,handle,display_name,bio,follower_count,engagement_median,avg_views,posting_per_week,video_count,sponsored_count,category,category_secondary,content_format,persona,audience_lang,original_sound_ratio,comment_substance_ratio,comment_lang_match,creator_reply_rate,top_hashtags,profile_summary,email,email_type,market,source_type,source_value,source_brand,is_songpush_user,songpush_admin_url,platform";
+  "sec_uid,handle,display_name,bio,follower_count,engagement_median,avg_views,avg_views_pinned,posting_per_week,video_count,sponsored_count,avatar_url,category,category_secondary,content_format,persona,audience_lang,original_sound_ratio,comment_substance_ratio,comment_lang_match,creator_reply_rate,top_hashtags,profile_summary,email,email_type,market,source_type,source_value,source_brand,is_songpush_user,songpush_admin_url,platform";
 const PAGE = 25;
 const TOPICS = ["beauty","wellness","fitness","fashion","food","travel","gaming","tech","finance","music","comedy","parenting","home & interior","sustainability","relationship","dance","pets","cars","education","art","lifestyle"];
 const FORMATS = ["grwm","tutorial","vlog","day-in-life","storytime","talking-head","pov","skit","haul","review","recipe","transformation","dance","lip-sync","get-ready","unboxing","asmr"];
@@ -39,6 +39,15 @@ function PlatIcon({ p }: { p: string | null }) {
     : <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.6 5.82A4.28 4.28 0 0 1 15.54 3h-3.2v12.9a2.59 2.59 0 1 1-2.03-2.53v-3.26a5.76 5.76 0 1 0 5.03 5.71V8.9a7.5 7.5 0 0 0 4.3 1.34V7.06a4.28 4.28 0 0 1-2.99-1.24z"/></svg>;
 }
 const profileUrl = (r: Row) => r.platform === "instagram" ? `https://www.instagram.com/${r.handle}` : `https://www.tiktok.com/@${r.handle}`;
+
+function Mono({ r, big }: { r: Row; big?: boolean }) {
+  return (
+    <div className="mono" style={{ background: catColor(r.category), ...(big ? { width: 52, height: 52, fontSize: 19, borderRadius: 14 } : {}) }}>
+      {initials(r)}
+      {r.avatar_url && <img src={r.avatar_url} alt="" onError={(e) => { e.currentTarget.style.display = "none"; }} />}
+    </div>
+  );
+}
 
 export default function Search() {
   const [rows, setRows] = useState<Row[]>([]);
@@ -279,7 +288,7 @@ export default function Search() {
           : rows.length === 0 ? <div className="empty">No creators for this search.</div>
           : rows.map(r => (
             <div key={r.sec_uid} className={"crow" + (r.is_songpush_user ? " wepush" : "")} onClick={() => setPanel(r)}>
-              <div className="mono" style={{ background: catColor(r.category) }}>{initials(r)}</div>
+              <Mono r={r} />
               <div className="idcol">
                 <div className="nm">{r.display_name || r.handle}<span className="pf" title={r.platform === "instagram" ? "Instagram" : "TikTok"}><PlatIcon p={r.platform} /></span></div>
                 <div className="hd">@{r.handle}</div>
@@ -338,7 +347,7 @@ function Detail({ r, onClose, marketFlag }: { r: Row; onClose: () => void; marke
     <div className="aqrow" key={label}><div className="aqicon">{icon}</div><div className="aqmain"><div className="aqlabel">{label}</div><div className="aqdesc">{desc}</div></div><div className={"aqmark aq-" + state}>{state === "good" ? "✓" : state === "bad" ? "✗" : "~"}</div></div>
   );
   const erCol = (r.engagement_median ?? 0) < 2 ? "var(--wp-muted)" : (r.engagement_median ?? 0) > 14 ? "var(--wp-warn)" : "var(--wp-good)";
-  const reachPct = r.follower_count ? Math.min(100, Math.round(((r.avg_views ?? 0) / r.follower_count) * 100)) : 0;
+  const vmax = Math.max(r.avg_views ?? 0, r.avg_views_pinned ?? 0) || 1;
   const osr = r.original_sound_ratio ?? 0;
   const emClass = r.email_type === "management" ? "em-mgmt" : r.email_type === "business_email" ? "em-biz" : "em-free";
   const emLabel = r.email_type === "management" ? "Management" : r.email_type === "business_email" ? "Business" : r.email_type === "freemail" ? "Freemail" : (r.email_type || "—");
@@ -347,7 +356,7 @@ function Detail({ r, onClose, marketFlag }: { r: Row; onClose: () => void; marke
   return (
     <>
       <div className="p-head">
-        <div className="mono" style={{ background: catColor(r.category) }}>{initials(r)}</div>
+        <Mono r={r} big />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="nm">{r.display_name || r.handle}<span className="pf" style={{ padding: 3 }}><PlatIcon p={r.platform} /></span></div>
           <div className="hd">@{r.handle}</div>
@@ -366,7 +375,16 @@ function Detail({ r, onClose, marketFlag }: { r: Row; onClose: () => void; marke
         <div>
           <div className="sec-t">Reach &amp; engagement</div>
           {bar("Engagement rate", `${r.engagement_median ?? "—"}%`, ((r.engagement_median ?? 0) / 14) * 100, erCol, (r.engagement_median ?? 0) >= 2 && (r.engagement_median ?? 0) <= 14 ? "in target band 2–14%" : "outside band")}
-          {bar("Avg views", fmt(r.avg_views), reachPct, "var(--wp-acc)", `≈ ${reachPct}% of followers reached per post`)}
+          <div className="stat twobar">
+            <div className="stat-head"><span className="stat-label">Reach — typical vs. peak</span><span className="stat-val">{fmt(r.avg_views)}</span></div>
+            <div className="track"><div className="fill" style={{ width: `${Math.max(2, (r.avg_views ?? 0) / vmax * 100)}%`, background: "var(--wp-acc)" }} /></div>
+            {r.avg_views_pinned ? (
+              <>
+                <div className="track" style={{ marginTop: 5 }}><div className="fill" style={{ width: "100%", background: "color-mix(in srgb,var(--wp-acc) 38%,transparent)" }} /></div>
+                <div className="minilegend"><span><i style={{ background: "var(--wp-acc)" }} />{fmt(r.avg_views)} typical</span><span><i style={{ background: "color-mix(in srgb,var(--wp-acc) 38%,transparent)" }} />{fmt(r.avg_views_pinned)} pinned</span></div>
+              </>
+            ) : <div className="stat-note">no pinned post</div>}
+          </div>
         </div>
         <div className="kv">
           <div className="cell"><div className="k">Followers</div><div className="v num">{fmt(r.follower_count)}</div></div>

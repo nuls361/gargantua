@@ -7,7 +7,7 @@ import { supabase } from "../lib/supabase";
 
 type SourceType = "brand" | "hashtag" | "sound" | "creator";
 type Row = { source_type: SourceType; source_value: string; creators_found: number; creators_dach: number; creators_uk: number; creators_enriched: number; last_seen: string | null };
-type SourceCreator = { sec_uid: string; handle: string; display_name: string | null; follower_count: number | null; engagement_median: number | null; market: string | null; email: string | null; category: string | null; platform: string | null };
+type SourceCreator = { sec_uid: string; handle: string; display_name: string | null; follower_count: number | null; engagement_median: number | null; market: string | null; email: string | null; category: string | null; platform: string | null; avatar_url: string | null };
 
 const CAT_HUE: Record<string, number> = { beauty:330,wellness:160,fitness:14,fashion:280,food:26,travel:200,gaming:250,tech:210,finance:150,music:190,comedy:45,parenting:340,"home & interior":175,sustainability:135,relationship:350,dance:300,pets:32,cars:220,education:230,art:265,lifestyle:255 };
 const TYPE: Record<SourceType, { c: string; label: string; ic: JSX.Element }> = {
@@ -48,7 +48,7 @@ export default function Harvest() {
     if (!viewSrc) return;
     setViewLoading(true); setViewRows([]);
     supabase.from("tt_creators")
-      .select("sec_uid,handle,display_name,follower_count,engagement_median,market,email,category,platform")
+      .select("sec_uid,handle,display_name,follower_count,engagement_median,market,email,category,platform,avatar_url")
       .eq("discovered_from", viewSrc.source_value)
       .order("follower_count", { ascending: false }).limit(50)
       .then(({ data }) => { setViewRows((data ?? []) as SourceCreator[]); setViewLoading(false); });
@@ -188,7 +188,7 @@ export default function Harvest() {
               <div className="p-body">
                 {viewLoading ? <div className="empty">Loading…</div> : viewRows.length === 0 ? <div className="empty" style={{ padding: 36 }}>No stored creators for this source.</div> : viewRows.map(c => (
                   <div className="pcrow" key={c.sec_uid}>
-                    <div className="cmono" style={{ background: catColor(c.category) }}>{initials(c)}</div>
+                    <div className="cmono" style={{ background: catColor(c.category) }}>{initials(c)}{c.avatar_url && <img src={c.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { e.currentTarget.style.display = "none"; }} />}</div>
                     <div style={{ minWidth: 0 }}><div className="cn">{c.display_name || c.handle}</div><div className="ch">@{c.handle}{c.category ? ` · ${c.category}` : ""}</div></div>
                     <div className="cm"><b>{fmt(c.follower_count)}</b> foll<br />{c.engagement_median ?? "—"}% ER</div>
                     <a className="op" href={c.platform === "instagram" ? `https://www.instagram.com/${c.handle}` : `https://www.tiktok.com/@${c.handle}`} target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
