@@ -82,6 +82,7 @@ export default function Search() {
   const [adMin, setAdMin] = useState("");
   const [etype, setEtype] = useState("");
   const [exclWp, setExclWp] = useState(false);
+  const [contact, setContact] = useState("");
   const [sortKey, setSortKey] = useState("follower_count");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -102,12 +103,11 @@ export default function Search() {
 
   const withFilters = useCallback(<T,>(qb: T): T => {
     let q = qb as any;
+    if (contact === "never") q = q.is("last_contacted_at", null);
+    else if (contact) q = q.lte("last_contacted_at", new Date(Date.now() - Number(contact) * 86400000).toISOString());
     if (mode === "semantic") {
-      const words = pDeb.trim().toLowerCase().replace(/[,()%*]/g, "").split(/\s+/).filter((w) => w.length >= 3);
-      if (words.length) {
-        const ors = words.flatMap((w) => [`profile_summary.ilike.*${w}*`, `category.ilike.*${w}*`, `handle.ilike.*${w}*`, `display_name.ilike.*${w}*`]).join(",");
-        q = q.or(ors);
-      }
+      const p = pDeb.trim();
+      if (p) q = q.textSearch("summary_fts", p, { type: "websearch" });
       if (market) q = q.eq("market", market);
       return q as T;
     }
@@ -134,12 +134,12 @@ export default function Search() {
     if (etype) q = q.eq("email_type", etype);
     if (exclWp) q = q.or("is_songpush_user.is.null,is_songpush_user.eq.false");
     return q as T;
-  }, [mode, pDeb, market, platform, category, format, follMin, follMax, erMin, erMax, viewsMin, persona, lang, speak, vcMin, vcMax, postMin, src, onmarket, engaged, responsive, adMin, etype, exclWp]);
+  }, [mode, pDeb, market, platform, category, format, follMin, follMax, erMin, erMax, viewsMin, persona, lang, speak, vcMin, vcMax, postMin, src, onmarket, engaged, responsive, adMin, etype, exclWp, contact]);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     const sk = sortKey === "fit" ? "follower_count" : sortKey;
-    const q = withFilters(supabase.from("tt_creators").select(COLS, { count: "exact" }))
+    const q = withFilters(supabase.from("tt_creators_x").select(COLS, { count: "exact" }))
       .order(sk, { ascending: sortDir === "asc", nullsFirst: false })
       .range(page * PAGE, page * PAGE + PAGE - 1);
     const { data, count, error: err } = await q;
@@ -164,19 +164,13 @@ export default function Search() {
       }
       const cap = takeN ? Math.max(1, Number(takeN)) : 5000;
       const sk = sortKey === "fit" ? "follower_count" : sortKey;
-      const { data, error } = await withFilters(supabase.from("tt_creators").select(COLS))
+      const { data, error } = await withFilters(supabase.from("tt_creators_x").select(COLS))
         .order(sk, { ascending: sortDir === "asc", nullsFirst: false }).limit(cap);
       if (error) throw error;
       const srcRows = (data ?? []) as Row[];
       if (!srcRows.length) throw new Error("Nothing to send.");
-      const handles = [...new Set(srcRows.map(r => r.handle))];
-      const existing = new Set<string>();
-      for (let i = 0; i < handles.length; i += 300) {
-        const { data: ex } = await supabase.from("creators").select("handle").in("handle", handles.slice(i, i + 300));
-        (ex ?? []).forEach((c: { handle: string | null }) => c.handle && existing.add(c.handle.toLowerCase()));
-      }
       const now = new Date().toISOString();
-      const crows = srcRows.filter(r => !existing.has(r.handle.toLowerCase())).map(r => ({
+      const crows = srcRows.map(r => ({
         handle: r.handle, tiktok_username: r.handle, platform: r.platform || "tiktok", email: r.email || null,
         region_label: r.market === "dach" ? "dach" : r.market === "uk" ? "uk" : null,
         status: r.email ? "enriched" : "sourced", enriched_at: r.email ? now : null,
@@ -188,8 +182,7 @@ export default function Search() {
         const { data: ins, error: e2 } = await supabase.from("creators").upsert(crows.slice(i, i + 200), { onConflict: "email_normalized", ignoreDuplicates: true }).select("id");
         if (e2) throw e2; inserted += ins?.length ?? 0;
       }
-      const skipped = srcRows.length - inserted;
-      setNotice(`Sent ${inserted} to “${listName}”${skipped > 0 ? ` · ${skipped} skipped (already in CRM / duplicate)` : ""}.`);
+      setNotice(`Sent ${inserted} to “${listName}”.`);
       setNewName(""); loadLists();
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     setSending(false);
@@ -249,6 +242,7 @@ export default function Search() {
               <div className="field check"><input type="checkbox" checked={engaged} onChange={e => setEngaged(e.target.checked)} id="wpeng" /><label htmlFor="wpeng">Real engagement</label></div>
               <div className="field check"><input type="checkbox" checked={responsive} onChange={e => setResponsive(e.target.checked)} id="wpresp" /><label htmlFor="wpresp">Responsive creator</label></div>
               <div className="fsec">Contact &amp; business</div>
+              <div className="field"><label>Last contacted</label><select value={contact} onChange={e => setContact(e.target.value)}><option value="">Any</option><option value="never">Never contacted</option><option value="30">30+ days ago</option><option value="60">60+ days ago</option><option value="90">90+ days ago</option></select></div>
               <div className="field"><label>Found via</label><select value={src} onChange={e => setSrc(e.target.value)}><option value="">Any source</option><option value="brand">Brand</option><option value="hashtag">Hashtag</option><option value="sound">Sound</option><option value="creator">Creator</option></select></div>
               <div className="field"><label>Min paid collabs</label><input className="inp num" placeholder="e.g. 2" value={adMin} onChange={e => setAdMin(e.target.value)} /></div>
               <div className="field"><label>Email type</label><select value={etype} onChange={e => setEtype(e.target.value)}><option value="">Any</option><option value="management">Management</option><option value="freemail">Freemail</option><option value="business_email">Business</option></select></div>
@@ -274,6 +268,7 @@ export default function Search() {
           <svg viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>{sending ? "Sending…" : "Send to list"}
         </button>
         <select className="sortsel" value={sortKey} onChange={e => setSortKey(e.target.value)}>
+          <option value="fit">Best match</option>
           <option value="follower_count">Followers</option>
           <option value="engagement_median">Engagement</option>
           <option value="avg_views">Avg views</option>
