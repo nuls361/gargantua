@@ -6,7 +6,7 @@ import {
   type Campaign, type Creator, type List, type PipelineStage, type ContactState, type LeadStatus,
 } from "../lib/types";
 import CreatorTable from "../components/CreatorTable";
-import ListsTable, { type ListRow } from "../components/ListsTable";
+import { type ListRow } from "../components/ListsTable";
 import Pager from "../components/Pager";
 
 const CREATOR_COLS =
@@ -68,19 +68,30 @@ function ListsOverview() {
     in_instantly: 0, href: `/lists/recycle?days=${d}`,
   }));
 
-  return (
-    <div>
-      <div className="toolbar">
-        <h2 style={{ margin: 0 }}>Lists</h2>
-        <div className="grow" />
-      </div>
-      <p className="muted">
-        Each list is a batch. <strong>Source</strong> in Search → <strong>send to Instantly</strong>.
-        The contact state prevents double-contacts. The <strong>♻️ idle</strong> lists are
-        auto-built: contacted leads that never replied, ready to re-approach.
-      </p>
+  const all = [...idleRows, ...rows];
+  const kindPill = (k: string) => k === "working" ? "k-working" : k === "filtered" ? "k-filtered" : "k-legacy";
+  const subFor = (l: ListRow) =>
+    l.kind === "recycle" ? "Contacted leads that never replied — ready to re-approach"
+      : `${(l.total ?? 0).toLocaleString("en-GB")} creators${l.in_instantly ? ` · ${l.in_instantly.toLocaleString("en-GB")} in Instantly` : ""}${l.enriched ? ` · ${l.enriched.toLocaleString("en-GB")} enriched` : ""}`;
 
-      <ListsTable rows={[...idleRows, ...rows]} loading={loading} />
+  return (
+    <div className="wp">
+      <div className="eyebrow">Outreach</div>
+      <h1>Lists</h1>
+      <div className="sub">Source in Search → open a list → send it to an Instantly campaign. Contact state prevents double-contacts; ♻️ idle lists are auto-built to re-approach.</div>
+
+      <div className="sec">Your lists <span className="c">{all.length}</span></div>
+      <div className="rows" style={{ gap: 6 }}>
+        {loading ? <div className="empty">Loading…</div> : all.length === 0 ? <div className="empty">No lists yet — source creators in Search.</div> : all.map((l) => (
+          <div className="lrow" key={l.id}>
+            <div style={{ minWidth: 0 }}>
+              <div className="lname">{l.name}<span className={"kpill " + kindPill(l.kind)}>{l.kind}</span></div>
+              <div className="lsub">{subFor(l)}</div>
+            </div>
+            <Link className="view" to={l.href || `/lists/${l.id}`}>Open →</Link>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
