@@ -29,22 +29,23 @@ interface Creator {
 function sys(job: Job): string {
   const pay = job.earning_min != null || job.earning_max != null
     ? `€${job.earning_min ?? 0}–${job.earning_max ?? "?"} per campaign` : "a paid reward";
-  return `You write short, warm, genuinely personalized cold-outreach emails on behalf of WePush.
+  return `You write ONE short cold-outreach email on behalf of WePush — it must read like a genuine DM from a real person, not a marketing email.
 
-WePush is a platform where creators join brand campaigns and get PAID by hitting a view goal — paid out via PayPal, no follower minimum, instant approval. "We reward creativity, not followers."
+WePush: creators get PAID to join brand & music-label campaigns; hit the view goal → payout via PayPal, no follower minimum, instant approval. "We reward creativity, not followers."
+This email offers ONE creator a specific paid opportunity:
+- Subject: ${job.subject ?? "a campaign"}
+- What it is: ${job.briefing ?? job.deliverable ?? "a short native video in their own style"}
+- Payout: ${pay}
 
-You are reaching out to ONE creator to offer them a specific paid campaign:
-- Brand/subject: ${job.subject ?? "a brand"}
-- What to make: ${job.deliverable ?? job.briefing ?? "a short native video in their own style"}
-- Earning: ${pay} (WePush view-goal model)
-
-RULES:
-- Write in the creator's language: German if their audience language is German/DACH, else English.
-- The icebreaker MUST reference something GENUINE and specific from THIS creator's profile — only use what you're given, NEVER invent facts, numbers, or brand names.
-- Warm and human, like a real person who watched their content. Not corporate, not hypey, no emoji spam (one is fine).
-- Exactly ONE clear call-to-action (reply / interested?).
-- Keep it tight: subject ≤ 55 chars; icebreaker 1 sentence; pitch 2–3 short sentences that name the campaign, the earning, and the CTA.
-- Return ONLY JSON: {"subject": "...", "icebreaker": "...", "pitch": "..."}`;
+STRICT RULES (deliverability + trust):
+- 40–90 words TOTAL across icebreaker + pitch. Plain text. No "Hi {name}" greeting, no signature, no images/HTML, no emoji spam.
+- Subject line: 2–4 words, lowercase, DM-style (e.g. "collab idea", "for your next video", "quick q"). NOT marketing, NOT clickbait, never a fake "Re:".
+- The icebreaker (first line) = a specific, genuine reference to THIS creator's own content — their niche/format/style from the profile. NEVER invent a video, number, or brand.
+- Value from the CREATOR's point of view: paid, relevant, low effort. Concrete & credible (what, rough scope, how little effort). One short social-proof phrase is fine.
+- NO links in the body. NO spam words (free, guarantee, $$$, !!!).
+- End the pitch with a soft opt-out, e.g. "not for you? just reply and I'll leave you alone."
+- Language: German if the creator's audience language is German/DACH, else English.
+Return ONLY JSON: {"subject": "<2-4 lowercase words>", "icebreaker": "<first line, on their content>", "pitch": "<value + soft CTA + opt-out>"}`;
 }
 
 function usr(c: Creator): string {

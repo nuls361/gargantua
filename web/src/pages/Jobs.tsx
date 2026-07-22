@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { extractBriefing } from "../lib/briefing";
+import { Detail, Mono, PlatIcon, erClass, fmt, profileUrl, DIFF, PERSONA, COLS, type Row } from "../components/CreatorPanel";
 
-// Jobs — the campaign-driven outreach unit. A job holds a brief, the sample creators
-// the brand likes (→ lookalike match), earning, and targeting. Replaces working Lists.
+// Jobs — the campaign container. Definition (brief/earning/campaigns) lives here;
+// members are sourced in Search and added. No searching happens in the job.
 
 type Job = {
   id: string; title: string; status: string; subject: string | null; briefing: string | null;
@@ -15,36 +16,7 @@ type Job = {
   campaign_google: string | null; campaign_outlook: string | null; campaign_custom: string | null;
 };
 type Campaign = { instantly_campaign_id: string; name: string };
-// Match row = same shape/fields the Search page renders, + a fit score.
-type Match = {
-  sec_uid: string; handle: string; display_name: string | null; category: string | null;
-  content_format: string[] | null; persona: string | null; original_sound_ratio: number | null;
-  follower_count: number | null; engagement_median: number | null; avg_views: number | null;
-  avatar_url: string | null; platform: string | null; is_songpush_user: boolean | null;
-  email: string | null; email_difficulty: string | null; similarity: number;
-};
-const ROWCOLS = "sec_uid,handle,display_name,category,content_format,persona,original_sound_ratio,follower_count,engagement_median,avg_views,avatar_url,platform,is_songpush_user,email,email_difficulty";
-
-// ---- helpers copied verbatim from the Search page so rows render identically ----
-const CAT_HUE: Record<string, number> = { beauty:330,wellness:160,fitness:14,fashion:280,food:26,travel:200,gaming:250,tech:210,finance:150,music:190,comedy:45,parenting:340,"home & interior":175,sustainability:135,relationship:350,dance:300,pets:32,cars:220,education:230,art:265,lifestyle:255 };
-const PERSONA: Record<string, string> = { solo:"Solo", couple:"Couple", family:"Family", group:"Group" };
-const DIFF: Record<string, { label: string; color: string }> = {
-  very_easy:{label:"Very easy",color:"#12A150"}, easy:{label:"Easy",color:"#4E9F2E"}, easy_medium:{label:"Easy–med",color:"#8A9A1B"},
-  medium:{label:"Medium",color:"#C2860B"}, hard:{label:"Hard",color:"#D9600F"}, very_hard:{label:"Very hard",color:"#C0341D"}, skip:{label:"Skip · t-online",color:"#6B7280"},
-};
-const catColor = (c: string | null) => `hsl(${(c && CAT_HUE[c]) ?? 255} 62% 52%)`;
-const initials = (r: { display_name: string | null; handle: string }) => ((r.display_name || r.handle).replace(/[^\p{L}\p{N} ]/gu,"").trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase() || r.handle[0].toUpperCase());
-const erClass = (e: number | null) => e == null ? "" : e < 2 ? "er-bad" : e > 14 ? "er-warn" : "er-good";
-const fmt = (n: number | null) => n == null ? "—" : n >= 1e6 ? `${(n/1e6).toFixed(1)}m` : n >= 1e3 ? `${(n/1e3).toFixed(n>=1e5?0:1)}k` : `${n}`;
-const profileUrl = (r: { platform: string | null; handle: string }) => r.platform === "instagram" ? `https://www.instagram.com/${r.handle}` : `https://www.tiktok.com/@${r.handle}`;
-function PlatIcon({ p }: { p: string | null }) {
-  return p === "instagram"
-    ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.1" fill="currentColor" stroke="none"/></svg>
-    : <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.6 5.82A4.28 4.28 0 0 1 15.54 3h-3.2v12.9a2.59 2.59 0 1 1-2.03-2.53v-3.26a5.76 5.76 0 1 0 5.03 5.71V8.9a7.5 7.5 0 0 0 4.3 1.34V7.06a4.28 4.28 0 0 1-2.99-1.24z"/></svg>;
-}
-function Mono({ r }: { r: Match }) {
-  return <div className="mono" style={{ background: catColor(r.category) }}>{initials(r)}{r.avatar_url && <img src={r.avatar_url} alt="" onError={e => { e.currentTarget.style.display = "none"; }} />}</div>;
-}
+type Member = Row & { similarity: number };   // full creator row + fit score
 const STATUS: Record<string, string> = { draft:"#8A8F9C", active:"#12A150", paused:"#C2860B", closed:"#6B7280" };
 
 export default function Jobs() {
@@ -183,12 +155,12 @@ function CreateJob({ onClose, onSaved, job }: { onClose: () => void; onSaved: (i
 
 function JobDetail({ id }: { id: string }) {
   const [job, setJob] = useState<Job | null>(null);
-  const [members, setMembers] = useState<Match[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [emails, setEmails] = useState<Record<string, { subject: string; icebreaker: string; pitch: string }>>({});
   const [generating, setGenerating] = useState(false);
-  const [open, setOpen] = useState<string | null>(null);
+  const [panel, setPanel] = useState<Member | null>(null);
   const [editing, setEditing] = useState(false);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
 
@@ -212,10 +184,10 @@ function JobDetail({ id }: { id: string }) {
     for (const r of jrows) if (r.ai_subject) em[r.sec_uid] = { subject: r.ai_subject, icebreaker: r.ai_icebreaker ?? "", pitch: r.ai_pitch ?? "" };
     setEmails(em);
     if (!jrows.length) { setMembers([]); return; }
-    const { data: full } = await supabase.from("tt_creators_x").select(ROWCOLS).in("sec_uid", jrows.map(r => r.sec_uid));
+    const { data: full } = await supabase.from("tt_creators_x").select(COLS).in("sec_uid", jrows.map(r => r.sec_uid));
     const fitBy = new Map(jrows.map(r => [r.sec_uid, r.fit_score]));
     const order = new Map(jrows.map((r, i) => [r.sec_uid, i]));
-    const merged = ((full ?? []) as Omit<Match, "similarity">[])
+    const merged = ((full ?? []) as Row[])
       .map(r => ({ ...r, similarity: fitBy.get(r.sec_uid) ?? -1 }))
       .sort((a, b) => (order.get(a.sec_uid) ?? 0) - (order.get(b.sec_uid) ?? 0));
     setMembers(merged);
@@ -295,10 +267,8 @@ function JobDetail({ id }: { id: string }) {
         {members.length === 0 ? <div className="empty">No leads yet. Source creators in <Link to="/search" style={{ color: "var(--wp-accink)" }}>Search</Link> (semantic, filters, or lookalike) and “Add to job”.</div>
           : members.map(m => {
             const em = emails[m.sec_uid];
-            const isOpen = open === m.sec_uid;
             return (
-            <div key={m.sec_uid}>
-              <div className={"crow" + (m.is_songpush_user ? " wepush" : "")} style={{ cursor: em ? "pointer" : "default" }} onClick={() => em && setOpen(isOpen ? null : m.sec_uid)}>
+              <div key={m.sec_uid} className={"crow" + (m.is_songpush_user ? " wepush" : "")} onClick={() => setPanel(m)}>
                 <Mono r={m} />
                 <div className="idcol">
                   <div className="nm">{m.display_name || m.handle}<span className="pf" title={m.platform === "instagram" ? "Instagram" : "TikTok"}><PlatIcon p={m.platform} /></span></div>
@@ -308,7 +278,7 @@ function JobDetail({ id }: { id: string }) {
                     {(m.content_format || []).slice(0, 2).map(f => <span key={f} className="pill">{f}</span>)}
                     {m.persona && <span className="pill ghost">{PERSONA[m.persona] || m.persona}</span>}
                     {(m.original_sound_ratio ?? 0) >= 0.5 && <span className="pill ghost">🎤 speaks</span>}
-                    {em && <span className="pill" style={{ background: "var(--wp-acc)", color: "#fff" }}>✉ email {isOpen ? "▲" : "▼"}</span>}
+                    {em && <span className="pill" style={{ background: "var(--wp-acc)", color: "#fff" }}>✉ email ready</span>}
                   </div>
                 </div>
                 <div className="metrics">
@@ -320,16 +290,13 @@ function JobDetail({ id }: { id: string }) {
                   <a className="iconbtn" href={profileUrl(m)} target="_blank" rel="noreferrer" title="Open profile" onClick={e => e.stopPropagation()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
                 </div>
               </div>
-              {em && isOpen && (
-                <div className="emailprev">
-                  <div className="ep-label">Subject</div>
-                  <div className="ep-sub">{em.subject}</div>
-                  <div className="ep-body">{em.icebreaker}{"\n\n"}{em.pitch}</div>
-                </div>
-              )}
-            </div>
             );
           })}
+      </div>
+
+      <div className={"wp-scrim" + (panel ? " show" : "")} onClick={() => setPanel(null)} />
+      <div className={"wp-panel" + (panel ? " show" : "")}>
+        {panel && <Detail r={panel} onClose={() => setPanel(null)} email={emails[panel.sec_uid] ?? null} />}
       </div>
     </div>
   );
