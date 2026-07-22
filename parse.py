@@ -115,7 +115,9 @@ def post_fields(post: dict) -> dict:
         hashtags = re.findall(r"#(\w+)", caption)
     video = post.get("video") or {}
     dur_ms = video.get("duration") or 0
-    handle = (post.get("author") or {}).get("unique_id") if isinstance(post.get("author"), dict) else None
+    author = post.get("author") if isinstance(post.get("author"), dict) else {}
+    author_stats = post.get("authorStats") or post.get("author_stats") or {}
+    handle = author.get("unique_id")
     aweme_id = post.get("aweme_id") or post.get("id")
     return {
         "aweme_id": aweme_id,
@@ -125,13 +127,18 @@ def post_fields(post: dict) -> dict:
         "sound": music.get("title") or music.get("music_name"),
         "sound_id": music.get("id") or music.get("mid"),
         "sound_author": music.get("author"),
-        "sound_is_original": music.get("is_original"),
+        "sound_is_original": bool(music.get("is_original_sound") or music.get("is_original")),
+        "sound_owner": music.get("owner_handle") or music.get("owner_nickname") or None,
         "sound_is_commerce": music.get("is_commerce_music"),
+        "is_top": bool(post.get("is_top")),          # pinned post
         "play": _num(stats, ["playCount", "play_count"]),
         "digg": _num(stats, ["diggCount", "digg_count"]),
         "comment": _num(stats, ["commentCount", "comment_count"]),
         "share": _num(stats, ["shareCount", "share_count"]),
         "collect": _num(stats, ["collectCount", "collect_count"]),
+        # total lifetime videos of the author — free from the post feed's author block
+        "author_video_count": _num(author, ["aweme_count", "awemeCount"]) or _num(author_stats, ["videoCount", "video_count"]),
+        "author_ins_id": author.get("ins_id") or None,
         "duration_s": round(dur_ms / 1000, 1) if dur_ms and dur_ms > 100 else (dur_ms or None),
         # per-post signals confirmed populated in Stage 1:
         "region": post.get("region"),                 # upload country (noisy -> derived)
@@ -269,6 +276,14 @@ CATEGORY_SIGNALS = {
     "parenting":       ["mama","kita","familie","kinder","mamalife","erzieherin","schwanger","baby","kleinkind","elternschaft","papa","familienleben","mom"],
     "home & interior": ["haushalt","putzen","cleaning","interior","deko","wohnung","zuhause","einrichtung","garten","wohnen","möbel","renovier"],
     "sustainability":  ["nachhaltig","sustainab","zerowaste","vegan","umwelt","klima","secondhand","upcycling","fairfashion"],
+    # couple / relationship content — a huge TikTok genre that was entirely unrepresented,
+    # so creators like it fell through to a low-confidence fashion/lifestyle guess.
+    "relationship":    ["paar-content","paarcontent","pärchen","couplegoals","couplecontent","beziehung","boyfriend","girlfriend","verlobt","verlobung","hochzeit","partnerlook","fernbeziehung","couplestuff"],
+    "dance":           ["tanzen","tanzvideo","dancetok","dancer","choreo","ballett","hiphopdance"],
+    "pets":            ["haustier","welpe","dogsoftiktok","catsoftiktok","hundeliebe","katzenvideo","kitten","hundewelpe"],
+    "cars":            ["carsoftiktok","autotuning","automobil","motorsport","cartok","tuningszene"],
+    "education":       ["studium","abitur","nachhilfe","studytok","studieren","klausur","lerntipps"],
+    "art":             ["zeichnen","malen","painting","tattookünstler","artwork","kunstwerk"],
     "lifestyle":       ["vlog","grwm","dayinmylife","alltag","morgenroutine","lifestyle","dailylife","routine"],
 }
 
@@ -358,12 +373,18 @@ def categorize_rich(post_field_list: list, bio: str | None = None, brands=None):
             if any(s in cap for s in stems):
                 score[cat] += 1
 
-    # bio — creators often state their niche outright (weight 3)
+    # bio — creators state their niche outright, so it's the most reliable signal. The
+    # EARLIEST-stated niche is the primary self-declaration and must dominate incidental
+    # caption/hashtag noise (weight 6 first-stated, 4 for further ones).
     if bio:
         b = bio.lower()
+        bio_hits = []
         for cat, stems in CATEGORY_SIGNALS.items():
-            if any(s in b for s in stems):
-                score[cat] += 3
+            pos = min((b.find(s) for s in stems if s in b), default=-1)
+            if pos >= 0:
+                bio_hits.append((pos, cat))
+        for i, (_pos, cat) in enumerate(sorted(bio_hits)):
+            score[cat] += 6 if i == 0 else 4
 
     # brands worked with — source_brand + sponsored @-mentions (weight 2)
     for h in brands or []:

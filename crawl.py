@@ -39,7 +39,7 @@ MAX_FOLLOWERS = 250_000
 # is wider (0–500k) — a brand collab is itself the quality signal.
 MIN_FOLLOWERS_BRAND = 0
 MAX_FOLLOWERS_BRAND = 500_000
-MARKETS = ("dach", "uk", "us")          # target countries
+MARKETS = tuple(m.strip() for m in os.environ.get("CRAWL_MARKETS", "dach,uk,us").split(",") if m.strip())  # target countries (env-overridable to rebalance)
 ER_MIN, ER_MAX = 2, 14                   # engagement-rate band (%)
 
 

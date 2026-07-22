@@ -219,6 +219,8 @@ class Enricher:
             if parse.is_sponsored(p.get("caption")):
                 brands += p.get("mentions") or []
         cat, cat2, cat_conf, cat_src = parse.categorize_rich(posts, bio=pf.get("bio"), brands=brands)
+        if cat and cat_conf is not None and cat_conf < 0.4:   # coin-flip guess -> hand to LLM pass
+            cat_src = "rich_uncertain"
 
         creator = {
             "sec_uid": sec,
@@ -342,8 +344,12 @@ class Enricher:
             if parse.is_sponsored(p.get("caption")):
                 brands += p.get("mentions") or []
         cat, cat2, cat_conf, cat_src = parse.categorize_rich(posts, bio=stub.get("bio"), brands=brands)
+        if cat and cat_conf is not None and cat_conf < 0.4:   # coin-flip guess -> hand to LLM pass
+            cat_src = "rich_uncertain"
         cutoff = time.time() - self.since_days * 86400
         recent = [p for p in posts if p.get("create_time") and int(p["create_time"]) >= cutoff]
+        # total lifetime videos: free from the post feed's author block (no profile call)
+        vc = next((p.get("author_video_count") for p in posts if p.get("author_video_count")), None)
 
         self.db.update_creator(sec, {
             "language": parse.dominant_language(posts),
@@ -360,7 +366,7 @@ class Enricher:
             "category_confidence": cat_conf,
             "category_source": cat_src if cat else None,
             "sponsored_count": sum(1 for p in posts if parse.is_sponsored(p.get("caption"))),
-            "video_count": stub.get("video_count"),
+            "video_count": vc or stub.get("video_count"),
             "enrichment_status": "enriched",
             "qualify_status": "qualified" if market == "dach" else "out_of_market",
         })
