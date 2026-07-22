@@ -94,8 +94,11 @@ export default function Search() {
   const withFilters = useCallback(<T,>(qb: T): T => {
     let q = qb as any;
     if (mode === "semantic") {
-      const p = pDeb.trim().replace(/[,()%*]/g, "");
-      if (p) q = q.or(`profile_summary.ilike.*${p}*,handle.ilike.*${p}*,display_name.ilike.*${p}*,category.ilike.*${p}*`);
+      const words = pDeb.trim().toLowerCase().replace(/[,()%*]/g, "").split(/\s+/).filter((w) => w.length >= 3);
+      if (words.length) {
+        const ors = words.flatMap((w) => [`profile_summary.ilike.*${w}*`, `category.ilike.*${w}*`, `handle.ilike.*${w}*`, `display_name.ilike.*${w}*`]).join(",");
+        q = q.or(ors);
+      }
       if (market) q = q.eq("market", market);
       return q as T;
     }
