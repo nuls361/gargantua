@@ -47,16 +47,6 @@ function Mono({ r }: { r: Match }) {
 }
 const STATUS: Record<string, string> = { draft:"#8A8F9C", active:"#12A150", paused:"#C2860B", closed:"#6B7280" };
 
-// Pull a handle out of a pasted line: URL, @handle, or plain.
-function parseHandles(text: string): string[] {
-  return text.split(/[\n,]+/).map(line => {
-    const t = line.trim();
-    if (!t) return "";
-    const m = t.match(/(?:tiktok\.com\/@|instagram\.com\/)([\w.]+)/i);
-    return (m ? m[1] : t).replace(/^@+/, "").trim();
-  }).filter(Boolean);
-}
-
 export default function Jobs() {
   const { id } = useParams();
   return id ? <JobDetail id={id} /> : <JobsList />;
@@ -115,14 +105,9 @@ function CreateJob({ onClose, onSaved, job }: { onClose: () => void; onSaved: (i
   const [status, setStatus] = useState(job?.status ?? "draft");
   const [subject, setSubject] = useState(job?.subject ?? "");
   const [briefing, setBriefing] = useState(job?.briefing ?? "");
-  const [samples, setSamples] = useState((job?.sample_creators ?? []).join("\n"));
-  const [deliverable, setDeliverable] = useState(job?.deliverable ?? "");
   const [earnMin, setEarnMin] = useState(job?.earning_min != null ? String(job.earning_min) : "");
   const [earnMax, setEarnMax] = useState(job?.earning_max != null ? String(job.earning_max) : "");
   const [viewGoal, setViewGoal] = useState(job?.view_goal != null ? String(job.view_goal) : "");
-  const [market, setMarket] = useState(job?.target_market ?? "dach");
-  const [follMin, setFollMin] = useState(job?.foll_min != null ? String(job.foll_min) : "");
-  const [follMax, setFollMax] = useState(job?.foll_max != null ? String(job.foll_max) : "");
   const [cGoogle, setCGoogle] = useState(job?.campaign_google ?? "");
   const [cOutlook, setCOutlook] = useState(job?.campaign_outlook ?? "");
   const [cCustom, setCCustom] = useState(job?.campaign_custom ?? "");
@@ -156,10 +141,8 @@ function CreateJob({ onClose, onSaved, job }: { onClose: () => void; onSaved: (i
     setSaving(true); setErr(null);
     const payload = {
       title: title.trim(), status, subject: subject.trim() || null, briefing: briefing.trim() || null,
-      sample_creators: parseHandles(samples), deliverable: deliverable.trim() || null,
       earning_min: earnMin ? Number(earnMin) : null, earning_max: earnMax ? Number(earnMax) : null,
       view_goal: viewGoal ? Number(viewGoal) : null,
-      target_market: market || null, foll_min: follMin ? Number(follMin) : null, foll_max: follMax ? Number(follMax) : null,
       campaign_google: cGoogle || null, campaign_outlook: cOutlook || null, campaign_custom: cCustom || null,
     };
     const res = job
@@ -190,19 +173,11 @@ function CreateJob({ onClose, onSaved, job }: { onClose: () => void; onSaved: (i
             {impErr && <div className="notice err" style={{ marginTop: 0, marginBottom: 8 }}>{impErr}</div>}
             <textarea className="inp" rows={6} placeholder="Paste the full brief, or import it above — deliverable, hooks, do's & don'ts, voucher/CTA…" value={briefing} onChange={e => setBriefing(e.target.value)} />
           </div>
-          <div className="field"><label>Sample creators the brand likes <span style={{ color: "var(--wp-muted)" }}>(handles or profile URLs, one per line → lookalike match)</span></label><textarea className="inp" rows={4} placeholder={"@thatsonyi\nhttps://www.tiktok.com/@alicelich\ncassyverse_"} value={samples} onChange={e => setSamples(e.target.value)} /></div>
-          <div className="field"><label>Deliverable</label><input className="inp" placeholder="<30s video, strong hook, tag @aboutyou, voucher CTA" value={deliverable} onChange={e => setDeliverable(e.target.value)} /></div>
           <div className="fsec">Earning (WePush view-goal model)</div>
           <div className="fgrid">
             <div className="field"><label>Payout min €</label><input className="inp num" placeholder="40" value={earnMin} onChange={e => setEarnMin(e.target.value)} /></div>
             <div className="field"><label>Payout max €</label><input className="inp num" placeholder="500" value={earnMax} onChange={e => setEarnMax(e.target.value)} /></div>
             <div className="field"><label>View goal</label><input className="inp num" placeholder="e.g. 50000" value={viewGoal} onChange={e => setViewGoal(e.target.value)} /></div>
-          </div>
-          <div className="fsec">Targeting</div>
-          <div className="fgrid">
-            <div className="field"><label>Market</label><select value={market} onChange={e => setMarket(e.target.value)}><option value="">Any</option><option value="dach">DACH</option><option value="uk">UK</option><option value="us">US</option></select></div>
-            <div className="field"><label>Followers min</label><input className="inp num" placeholder="1000" value={follMin} onChange={e => setFollMin(e.target.value)} /></div>
-            <div className="field"><label>Followers max</label><input className="inp num" placeholder="250000" value={follMax} onChange={e => setFollMax(e.target.value)} /></div>
           </div>
           <div className="fsec">Instantly campaign per email provider <span style={{ color: "var(--wp-muted)", textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>— routes each creator by their inbox provider</span></div>
           <div className="fgrid">
@@ -280,7 +255,6 @@ function JobDetail({ id }: { id: string }) {
 
   if (loading) return <div className="wp"><div className="empty">Loading…</div></div>;
   if (!job) return <div className="wp"><div className="empty">Job not found.</div></div>;
-  const likeLink = `/search?like=${encodeURIComponent((job.sample_creators || []).map(h => "@" + h).join(", "))}`;
 
   return (
     <div className="wp">
@@ -295,18 +269,16 @@ function JobDetail({ id }: { id: string }) {
       <div className="jobmeta">
         {(job.earning_min != null || job.earning_max != null) && <div className="jm"><div className="k">Payout</div><div className="v">€{job.earning_min ?? 0}–{job.earning_max ?? "?"}</div></div>}
         {job.view_goal != null && <div className="jm"><div className="k">View goal</div><div className="v">{fmt(job.view_goal)}</div></div>}
-        <div className="jm"><div className="k">Market</div><div className="v">{job.target_market?.toUpperCase() || "Any"}</div></div>
-        <div className="jm"><div className="k">Followers</div><div className="v">{job.foll_min ? fmt(job.foll_min) : "0"}–{job.foll_max ? fmt(job.foll_max) : "∞"}</div></div>
-        <div className="jm"><div className="k">Samples</div><div className="v">{(job.sample_creators || []).length}</div></div>
+        <div className="jm"><div className="k">Members</div><div className="v">{members.length}</div></div>
+        <div className="jm"><div className="k">Campaigns set</div><div className="v">{[job.campaign_google, job.campaign_outlook, job.campaign_custom].filter(Boolean).length}/3</div></div>
       </div>
 
-      {job.deliverable && <div className="jobbrief"><b>Deliverable:</b> {job.deliverable}</div>}
       {job.briefing && <details className="jobbrief"><summary><b>Briefing</b></summary><div style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>{job.briefing}</div></details>}
 
       <div className="listhead" style={{ marginTop: 16 }}>
         <b>{members.length}</b><span>members</span>
         <span className="grow" />
-        <Link className="dirbtn" style={{ width: "auto", padding: "0 12px", textDecoration: "none", display: "inline-flex", alignItems: "center" }} to={likeLink}>Find lookalikes →</Link>
+        <Link className="dirbtn" style={{ width: "auto", padding: "0 12px", textDecoration: "none", display: "inline-flex", alignItems: "center" }} to="/search">＋ Source in Search</Link>
         <button className="sbtn2" onClick={generate} disabled={!members.length || generating}>
           <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l1.6 4.4L18 8l-4.4 1.6L12 14l-1.6-4.4L6 8l4.4-1.6L12 2z"/></svg>{generating ? "Generating…" : "Generate emails"}
         </button>
@@ -315,7 +287,7 @@ function JobDetail({ id }: { id: string }) {
       {notice && <div className="notice">{notice}</div>}
 
       <div className="rows">
-        {members.length === 0 ? <div className="empty">No members yet. Source creators in <Link to={likeLink} style={{ color: "var(--wp-accink)" }}>Search</Link> (semantic, filters, or lookalike) and “Add to job”.</div>
+        {members.length === 0 ? <div className="empty">No members yet. Source creators in <Link to="/search" style={{ color: "var(--wp-accink)" }}>Search</Link> (semantic, filters, or lookalike) and “Add to job”.</div>
           : members.map(m => {
             const em = emails[m.sec_uid];
             const isOpen = open === m.sec_uid;
