@@ -160,6 +160,9 @@ function JobDetail({ id }: { id: string }) {
   const [matching, setMatching] = useState(false);
   const [savedCount, setSavedCount] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  const [emails, setEmails] = useState<Record<string, { subject: string; icebreaker: string; pitch: string }>>({});
+  const [generating, setGenerating] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -167,8 +170,28 @@ function JobDetail({ id }: { id: string }) {
       setJob(data as Job); setLoading(false);
       const { count } = await supabase.from("job_creators").select("sec_uid", { count: "exact", head: true }).eq("job_id", id);
       setSavedCount(count ?? 0);
+      const { data: jc } = await supabase.from("job_creators").select("sec_uid,ai_subject,ai_icebreaker,ai_pitch").eq("job_id", id).not("ai_subject", "is", null);
+      setEmails(Object.fromEntries(((jc ?? []) as { sec_uid: string; ai_subject: string; ai_icebreaker: string; ai_pitch: string }[])
+        .map(r => [r.sec_uid, { subject: r.ai_subject, icebreaker: r.ai_icebreaker, pitch: r.ai_pitch }])));
     })();
   }, [id]);
+
+  async function generate() {
+    if (!matches.length) return;
+    setGenerating(true); setNotice(null);
+    const ids = matches.slice(0, 20).map(m => m.sec_uid);
+    const { data, error } = await supabase.functions.invoke("generate-job-emails", { body: { job_id: id, sec_uids: ids } });
+    if (error) setNotice(error.message);
+    else {
+      const map = { ...emails };
+      for (const e of ((data?.emails ?? []) as { sec_uid: string; subject: string; icebreaker: string; pitch: string }[]))
+        map[e.sec_uid] = { subject: e.subject, icebreaker: e.icebreaker, pitch: e.pitch };
+      setEmails(map);
+      setSavedCount(Object.keys(map).length);
+      setNotice(`Generated ${(data?.emails ?? []).length} personalized emails.`);
+    }
+    setGenerating(false);
+  }
 
   const runMatch = useCallback(async () => {
     if (!job) return;
@@ -218,7 +241,10 @@ function JobDetail({ id }: { id: string }) {
         <span style={{ color: "var(--wp-muted)", fontSize: 13, marginLeft: 8 }}>agencies excluded · email-ready only</span>
         <span className="grow" />
         {savedCount > 0 && <span className="pill" style={{ background: "var(--wp-good)", color: "#fff", marginRight: 8 }}>{savedCount} saved</span>}
-        <button className="sbtn2" onClick={saveMatches} disabled={!matches.length}>Save matches to job</button>
+        <button className="dirbtn" style={{ width: "auto", padding: "0 12px" }} onClick={saveMatches} disabled={!matches.length}>Save matches</button>
+        <button className="sbtn2" onClick={generate} disabled={!matches.length || generating}>
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l1.6 4.4L18 8l-4.4 1.6L12 14l-1.6-4.4L6 8l4.4-1.6L12 2z"/></svg>{generating ? "Generating…" : "Generate emails"}
+        </button>
       </div>
 
       {notice && <div className="notice">{notice}</div>}
@@ -227,26 +253,40 @@ function JobDetail({ id }: { id: string }) {
         {matching ? <div className="empty">Matching lookalikes…</div>
           : !(job.sample_creators || []).length ? <div className="empty">No sample creators on this job — add some to match.</div>
           : matches.length === 0 ? <div className="empty">No matches (none of the sample handles are in the pool yet).</div>
-          : matches.map(m => (
-            <div key={m.sec_uid} className="crow">
-              <div className="mono" style={{ background: catColor(m.category) }}>{initials(m)}{m.avatar_url && <img src={m.avatar_url} alt="" onError={e => { e.currentTarget.style.display = "none"; }} />}</div>
-              <div className="idcol">
-                <div className="nm">{m.display_name || m.handle}</div>
-                <div className="hd">@{m.handle}</div>
-                <div className="tags">
-                  {m.category && <span className="pill cat">{m.category}</span>}
-                  {m.market && <span className="pill ghost">{m.market.toUpperCase()}</span>}
-                  {m.email_provider && PROV[m.email_provider] && <span className="pill" style={{ background: PROV[m.email_provider].color, color: "#fff" }}>{PROV[m.email_provider].label}</span>}
+          : matches.map(m => {
+            const em = emails[m.sec_uid];
+            const isOpen = open === m.sec_uid;
+            return (
+            <div key={m.sec_uid}>
+              <div className="crow" style={{ cursor: em ? "pointer" : "default" }} onClick={() => em && setOpen(isOpen ? null : m.sec_uid)}>
+                <div className="mono" style={{ background: catColor(m.category) }}>{initials(m)}{m.avatar_url && <img src={m.avatar_url} alt="" onError={e => { e.currentTarget.style.display = "none"; }} />}</div>
+                <div className="idcol">
+                  <div className="nm">{m.display_name || m.handle}</div>
+                  <div className="hd">@{m.handle}</div>
+                  <div className="tags">
+                    {m.category && <span className="pill cat">{m.category}</span>}
+                    {m.market && <span className="pill ghost">{m.market.toUpperCase()}</span>}
+                    {m.email_provider && PROV[m.email_provider] && <span className="pill" style={{ background: PROV[m.email_provider].color, color: "#fff" }}>{PROV[m.email_provider].label}</span>}
+                    {em && <span className="pill" style={{ background: "var(--wp-acc)", color: "#fff" }}>✉ email {isOpen ? "▲" : "▼"}</span>}
+                  </div>
+                </div>
+                <div className="metrics">
+                  <div className="metric"><div className="v num">{fmt(m.follower_count)}</div><div className="k">Followers</div></div>
+                  <div className="metric"><div className="v num">{m.engagement_median ?? "—"}%</div><div className="k">ER</div></div>
+                  <div className="metric"><div className="v num" style={{ color: "var(--wp-acc)" }}>{Math.round(m.similarity * 100)}</div><div className="k">Fit</div></div>
+                  <a className="iconbtn" href={`https://www.tiktok.com/@${m.handle}`} target="_blank" rel="noreferrer" title="Open profile" onClick={e => e.stopPropagation()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
                 </div>
               </div>
-              <div className="metrics">
-                <div className="metric"><div className="v num">{fmt(m.follower_count)}</div><div className="k">Followers</div></div>
-                <div className="metric"><div className="v num">{m.engagement_median ?? "—"}%</div><div className="k">ER</div></div>
-                <div className="metric"><div className="v num" style={{ color: "var(--wp-acc)" }}>{Math.round(m.similarity * 100)}</div><div className="k">Fit</div></div>
-                <a className="iconbtn" href={`https://www.tiktok.com/@${m.handle}`} target="_blank" rel="noreferrer" title="Open profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
-              </div>
+              {em && isOpen && (
+                <div className="emailprev">
+                  <div className="ep-label">Subject</div>
+                  <div className="ep-sub">{em.subject}</div>
+                  <div className="ep-body">{em.icebreaker}{"\n\n"}{em.pitch}</div>
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
       </div>
     </div>
   );
