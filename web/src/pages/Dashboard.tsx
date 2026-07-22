@@ -2,150 +2,116 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import GrowthChart, { type LeadPoint } from "../components/GrowthChart";
 
-const TOPICS = [
-  "beauty", "wellness", "fitness", "fashion", "food", "travel", "gaming",
-  "tech", "finance", "music", "comedy", "parenting", "home & interior", "sustainability", "lifestyle",
-];
-const cap = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
-const TOPIC_COLORS = ["#4f46e5", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6"];
+// Dashboard — the creator database at a glance, redesigned (scoped under .wp).
+// Aggregates come from count(head) queries + the leads_by_day RPC (no GROUP BY needed).
+
+const TOPICS = ["beauty","wellness","fitness","fashion","food","travel","gaming","tech","finance","music","comedy","parenting","home & interior","sustainability","relationship","dance","pets","cars","education","art","lifestyle"];
+const CAT_HUE: Record<string, number> = { beauty:330,lifestyle:255,fashion:280,parenting:340,food:26,travel:200,fitness:14,wellness:160,education:230,relationship:350,comedy:45,"home & interior":175,music:190,tech:210,gaming:250,finance:150,sustainability:135,dance:300,pets:32,cars:220,art:265 };
+const PERSONAS = ["solo","family","couple","group"];
+const PLABEL: Record<string, string> = { solo:"Solo", family:"Family", couple:"Couple", group:"Group" };
+const fmt = (n: number) => n >= 1e3 ? `${(n/1e3).toFixed(1).replace(/\.0$/,"")}k` : `${n}`;
+
+async function count(filter?: (q: any) => any): Promise<number> {
+  let q = supabase.from("tt_creators").select("sec_uid", { count: "exact", head: true }) as any;
+  if (filter) q = filter(q);
+  const { count: c } = await q;
+  return c ?? 0;
+}
 
 export default function Dashboard() {
-  const [uk, setUk] = useState<number | null>(null);
-  const [dach, setDach] = useState<number | null>(null);
   const [total, setTotal] = useState<number | null>(null);
+  const [dach, setDach] = useState(0);
+  const [adexp, setAdexp] = useState(0);
+  const [market, setMarket] = useState<{ dach: number; us: number; uk: number; other: number }>({ dach: 0, us: 0, uk: 0, other: 0 });
+  const [topics, setTopics] = useState<{ topic: string; n: number }[]>([]);
+  const [personas, setPersonas] = useState<{ p: string; n: number }[]>([]);
   const [series, setSeries] = useState<LeadPoint[]>([]);
   const [chartLoading, setChartLoading] = useState(true);
-  const [topics, setTopics] = useState<{ topic: string; n: number }[]>([]);
-  const [topicsLoading, setTopicsLoading] = useState(true);
-  const [pool, setPool] = useState<{ total: number; dach: number; uk: number; us: number } | null>(null);
 
   useEffect(() => {
     void (async () => {
-      const [ukRes, dachRes, totalRes] = await Promise.all([
-        supabase.from("creators").select("id", { count: "exact", head: true }).eq("region_label", "uk"),
-        supabase.from("creators").select("id", { count: "exact", head: true }).eq("region_label", "dach"),
-        supabase.from("creators").select("id", { count: "exact", head: true }),
+      const [t, d, u, us, ad] = await Promise.all([
+        count(), count(q => q.eq("market", "dach")), count(q => q.eq("market", "uk")),
+        count(q => q.eq("market", "us")), count(q => q.gte("sponsored_count", 2)),
       ]);
-      setUk(ukRes.count ?? 0);
-      setDach(dachRes.count ?? 0);
-      setTotal(totalRes.count ?? 0);
+      setTotal(t); setDach(d); setAdexp(ad);
+      setMarket({ dach: d, uk: u, us, other: Math.max(0, t - d - u - us) });
     })();
-
-    // The harvested creator pool (tt_creators) — this is what grows as the scraper runs.
     void (async () => {
-      const [tRes, dRes, uRes, usRes] = await Promise.all([
-        supabase.from("tt_creators").select("sec_uid", { count: "exact", head: true }),
-        supabase.from("tt_creators").select("sec_uid", { count: "exact", head: true }).eq("market", "dach"),
-        supabase.from("tt_creators").select("sec_uid", { count: "exact", head: true }).eq("market", "uk"),
-        supabase.from("tt_creators").select("sec_uid", { count: "exact", head: true }).eq("market", "us"),
-      ]);
-      setPool({ total: tRes.count ?? 0, dach: dRes.count ?? 0, uk: uRes.count ?? 0, us: usRes.count ?? 0 });
+      const c = await Promise.all(TOPICS.map(async t => ({ topic: t, n: await count(q => q.eq("category", t)) })));
+      setTopics(c.filter(x => x.n > 0).sort((a, b) => b.n - a.n));
     })();
-
+    void (async () => {
+      const c = await Promise.all(PERSONAS.map(async p => ({ p, n: await count(q => q.eq("persona", p)) })));
+      setPersonas(c.filter(x => x.n > 0).sort((a, b) => b.n - a.n));
+    })();
     void (async () => {
       const { data } = await supabase.rpc("leads_by_day");
-      setSeries(((data ?? []) as { day: string; n: number }[]).map((d) => ({ day: d.day, n: Number(d.n) })));
+      setSeries(((data ?? []) as { day: string; n: number }[]).map(d => ({ day: d.day, n: Number(d.n) })));
       setChartLoading(false);
-    })();
-
-    void (async () => {
-      const counts = await Promise.all(
-        TOPICS.map(async (t) => {
-          const { count } = await supabase
-            .from("tt_creators").select("sec_uid", { count: "exact", head: true }).eq("category", t);
-          return { topic: t, n: count ?? 0 };
-        })
-      );
-      setTopics(counts.filter((c) => c.n > 0).sort((a, b) => b.n - a.n));
-      setTopicsLoading(false);
     })();
   }, []);
 
-  const fmt = (n: number | null) => (n == null ? "…" : n.toLocaleString("en-GB"));
-  const topicMax = Math.max(1, ...topics.map((t) => t.n));
+  const MARKET = [
+    ["DACH", market.dach, "#12A150"], ["US", market.us, "#5B50E8"], ["UK", market.uk, "#C2680B"], ["Other", market.other, "#B6BAC6"],
+  ] as [string, number, string][];
+  const mtot = MARKET.reduce((a, m) => a + m[1], 0) || 1;
+  let off = 25;
+  const topMax = topics[0]?.n || 1;
+  const pMax = personas[0]?.n || 1;
 
   return (
-    <div>
-      <h2>Dashboard</h2>
+    <div className="wp">
+      <div className="eyebrow">Overview</div>
+      <h1>Dashboard</h1>
+      <div className="sub">The creator database at a glance.</div>
 
-      <div className="nav-section" style={{ padding: "8px 0 6px" }}>Creator pool (harvested)</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
-        <div className="stat" style={{ padding: "24px 22px" }}>
-          <div className="lbl" style={{ fontSize: 14 }}>Creators in pool</div>
-          <div style={{ fontSize: 44, fontWeight: 800, marginTop: 6, letterSpacing: "-0.02em" }}>{fmt(pool?.total ?? null)}</div>
+      <div className="stats" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
+        {([["Total creators", total == null ? "…" : total.toLocaleString("en-GB"), "var(--wp-acc)"],
+          ["DACH 🇩🇪", dach.toLocaleString("en-GB"), "var(--wp-good)"],
+          ["Ad-experienced", adexp.toLocaleString("en-GB"), "var(--wp-warn)"]] as [string, string, string][]).map(([k, v, c]) => (
+          <div className="stat-card" key={k}><div className="k"><i style={{ background: c }} />{k}</div><div className="v num">{v}</div></div>
+        ))}
+      </div>
+
+      <div className="grid2">
+        <div className="panelc">
+          <div className="phead"><div><div className="pt">Leads growth</div><div className="pts">Cumulative leads added to the CRM</div></div></div>
+          {chartLoading ? <div className="empty">Loading chart…</div> : <GrowthChart data={series} />}
         </div>
-        <div className="stat" style={{ padding: "24px 22px" }}>
-          <div className="lbl" style={{ fontSize: 14 }}>DACH</div>
-          <div style={{ fontSize: 44, fontWeight: 800, marginTop: 6, letterSpacing: "-0.02em" }}>{fmt(pool?.dach ?? null)}</div>
-        </div>
-        <div className="stat" style={{ padding: "24px 22px" }}>
-          <div className="lbl" style={{ fontSize: 14 }}>UK</div>
-          <div style={{ fontSize: 44, fontWeight: 800, marginTop: 6, letterSpacing: "-0.02em" }}>{fmt(pool?.uk ?? null)}</div>
-        </div>
-        <div className="stat" style={{ padding: "24px 22px" }}>
-          <div className="lbl" style={{ fontSize: 14 }}>US</div>
-          <div style={{ fontSize: 44, fontWeight: 800, marginTop: 6, letterSpacing: "-0.02em" }}>{fmt(pool?.us ?? null)}</div>
+        <div className="panelc">
+          <div className="phead"><div><div className="pt">By market</div><div className="pts">Where they post</div></div></div>
+          <div className="donut">
+            <svg viewBox="0 0 42 42">
+              {MARKET.map((m, i) => { const pc = m[1] / mtot * 100; const el = <circle key={i} cx="21" cy="21" r="15.915" fill="none" stroke={m[2]} strokeWidth="5.5" strokeDasharray={`${pc.toFixed(2)} ${(100 - pc).toFixed(2)}`} strokeDashoffset={off.toFixed(2)} />; off -= pc; return el; })}
+              <text x="21" y="20.5" textAnchor="middle" fontSize="6" fontWeight="800" fill="var(--wp-ink)">{fmt(mtot)}</text>
+              <text x="21" y="26" textAnchor="middle" fontSize="2.6" fill="var(--wp-muted)">creators</text>
+            </svg>
+            <div className="legend">
+              {MARKET.map(m => <div className="li" key={m[0]}><i style={{ background: m[2] }} /><span>{m[0]}</span><b>{m[1].toLocaleString("en-GB")}</b></div>)}
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="nav-section" style={{ padding: "18px 0 6px" }}>Leads (pipeline)</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
-        <div className="stat" style={{ padding: "24px 22px" }}>
-          <div className="lbl" style={{ fontSize: 14 }}>Total Leads</div>
-          <div style={{ fontSize: 44, fontWeight: 800, marginTop: 6, letterSpacing: "-0.02em" }}>{fmt(total)}</div>
-        </div>
-        <div className="stat" style={{ padding: "24px 22px" }}>
-          <div className="lbl" style={{ fontSize: 14 }}>DACH Leads</div>
-          <div style={{ fontSize: 44, fontWeight: 800, marginTop: 6, letterSpacing: "-0.02em" }}>{fmt(dach)}</div>
-        </div>
-        <div className="stat" style={{ padding: "24px 22px" }}>
-          <div className="lbl" style={{ fontSize: 14 }}>UK Leads</div>
-          <div style={{ fontSize: 44, fontWeight: 800, marginTop: 6, letterSpacing: "-0.02em" }}>{fmt(uk)}</div>
-        </div>
-      </div>
-
-      <div className="panel" style={{ marginTop: 20 }}>
-        <div className="toolbar" style={{ marginBottom: 6 }}>
-          <h3 style={{ margin: 0 }}>Lead growth</h3>
-          <div className="grow" />
-          <span className="muted" style={{ fontSize: 12 }}>{fmt(total)} total · cumulative</span>
-        </div>
-        {chartLoading ? <div className="center-loading">Loading chart…</div> : <GrowthChart data={series} />}
-      </div>
-
-      <div className="panel" style={{ marginTop: 20 }}>
-        <div className="toolbar" style={{ marginBottom: 10 }}>
-          <h3 style={{ margin: 0 }}>Creators by topic</h3>
-          <div className="grow" />
-          <span className="muted" style={{ fontSize: 12 }}>{topics.length} topics</span>
-        </div>
-        {topicsLoading ? (
-          <div className="center-loading">Loading…</div>
-        ) : topics.length === 0 ? (
-          <p className="muted">No topics categorised yet.</p>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {topics.map((t, i) => (
-              <div key={t.topic} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 120, fontSize: 13, textAlign: "right", flex: "none" }}>{cap(t.topic)}</div>
-                <div style={{ flex: 1, background: "var(--border)", borderRadius: 6, height: 22, overflow: "hidden" }}>
-                  <div style={{
-                    width: `${(t.n / topicMax) * 100}%`, height: "100%",
-                    background: TOPIC_COLORS[i % TOPIC_COLORS.length], borderRadius: 6,
-                    minWidth: 2, transition: "width .3s",
-                  }} />
-                </div>
-                <div className="num" style={{ width: 64, fontSize: 13, fontWeight: 600 }}>{t.n.toLocaleString("en-GB")}</div>
-              </div>
+      <div className="grid2">
+        <div className="panelc">
+          <div className="phead"><div><div className="pt">By topic</div><div className="pts">Creators per content niche</div></div></div>
+          <div className="bars">
+            {topics.map(t => (
+              <div className="barr" key={t.topic}><div className="bl">{t.topic}</div><div className="bt"><div className="bf" style={{ width: `${t.n / topMax * 100}%`, background: `hsl(${CAT_HUE[t.topic] ?? 255} 60% 55%)` }} /></div><div className="bv">{t.n.toLocaleString("en-GB")}</div></div>
             ))}
           </div>
-        )}
+        </div>
+        <div className="panelc">
+          <div className="phead"><div><div className="pt">By persona</div><div className="pts">Who appears in the content</div></div></div>
+          <div className="bars">
+            {personas.map(p => (
+              <div className="barr" key={p.p} style={{ gridTemplateColumns: "70px 1fr auto" }}><div className="bl">{PLABEL[p.p] || p.p}</div><div className="bt"><div className="bf" style={{ width: `${p.n / pMax * 100}%`, background: "var(--wp-acc)" }} /></div><div className="bv">{p.n.toLocaleString("en-GB")}</div></div>
+            ))}
+          </div>
+        </div>
       </div>
-
-      <p className="muted" style={{ marginTop: 14 }}>
-        Leads count toward a region once they carry a UK/DACH label. The growth curve is the
-        running total of leads by date added; the topic split is the categorised creator base.
-      </p>
     </div>
   );
 }
