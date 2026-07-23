@@ -194,6 +194,23 @@ function JobDetail({ id }: { id: string }) {
     })();
   }, [id, loadMembers]);
 
+  const [pushing, setPushing] = useState(false);
+  async function pushToInstantly() {
+    if (!members.length) return;
+    if (!(job?.campaign_google || job?.campaign_outlook || job?.campaign_custom)) {
+      setNotice("Assign at least one Instantly campaign above before pushing."); return;
+    }
+    setPushing(true); setNotice(null);
+    const { data, error } = await supabase.functions.invoke("push-job-to-instantly", { body: { job_id: id } });
+    if (error || data?.error) setNotice(error?.message || data?.error);
+    else {
+      const s = data?.skipped || {};
+      setNotice(`Pushed ${data?.pushed ?? 0} to Instantly. Skipped ${s.no_email || 0} without email · ${s.tonline || 0} t-online · ${s.no_campaign || 0} with no campaign for their provider.`);
+      await loadMembers();
+    }
+    setPushing(false);
+  }
+
   async function generate() {
     const todo = members.filter(m => !emails[m.sec_uid]).slice(0, 20).map(m => m.sec_uid);
     const ids = todo.length ? todo : members.slice(0, 20).map(m => m.sec_uid);
@@ -249,8 +266,11 @@ function JobDetail({ id }: { id: string }) {
       <div className="listhead" style={{ marginTop: 16 }}>
         <b>{members.length}</b><span>leads</span>
         <span className="grow" />
-        <button className="sbtn2" onClick={generate} disabled={!members.length || generating}>
-          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l1.6 4.4L18 8l-4.4 1.6L12 14l-1.6-4.4L6 8l4.4-1.6L12 2z"/></svg>{generating ? "Generating…" : "Generate emails"}
+        <button className="dirbtn" style={{ width: "auto", padding: "0 12px", height: 34 }} onClick={generate} disabled={!members.length || generating}>
+          {generating ? "Generating…" : "✨ Generate emails"}
+        </button>
+        <button className="sbtn2" onClick={pushToInstantly} disabled={!members.length || pushing} style={{ background: "var(--wp-good)" }}>
+          <svg viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>{pushing ? "Pushing…" : "Push to Instantly"}
         </button>
       </div>
 
