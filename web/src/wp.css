@@ -234,3 +234,17 @@
 .wp .impbar{display:flex;gap:8px;align-items:center;margin-bottom:8px}
 .wp .impbtn{white-space:nowrap;border:1px solid var(--wp-line);background:var(--wp-bg);border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--wp-ink2);cursor:pointer}
 .wp .impbtn:hover{border-color:var(--wp-acc);color:var(--wp-acc)}
+
+/* ---- Detail panel: collapsible sections + collab badges ------------------ */
+.wp-panel .psec{border-top:1px solid var(--wp-line2);padding:2px 0}
+.wp-panel .psec:first-of-type{border-top:0}
+.wp-panel .psec>summary{list-style:none;display:flex;align-items:center;gap:8px;cursor:pointer;padding:13px 0 11px;user-select:none}
+.wp-panel .psec>summary::-webkit-details-marker{display:none}
+.wp-panel .psec>summary .sec-t{flex:1}
+.wp-panel .psec>summary .chev{width:16px;height:16px;color:var(--wp-faint);transition:transform .2s;flex:none}
+.wp-panel .psec[open]>summary .chev{transform:rotate(180deg)}
+.wp-panel .psec-body{padding-bottom:14px}
+.wp-panel .collabrow{display:flex;align-items:center;flex-wrap:wrap;row-gap:8px}
+.wp-panel .collab{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:14px;border:2px solid var(--wp-card);margin-left:-8px;box-shadow:0 1px 3px rgba(20,21,26,.18)}
+.wp-panel .collab:first-child{margin-left:0}
+.wp-panel .collab.more{background:var(--wp-line2);color:var(--wp-muted);font-size:12px}

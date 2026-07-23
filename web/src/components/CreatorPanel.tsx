@@ -1,5 +1,7 @@
 // Shared creator detail panel — used by both Search (Creators) and Jobs so the
 // "overview" is identical everywhere. Jobs passes an optional generated `email`.
+import type { ReactNode } from "react";
+
 export type Row = {
   sec_uid: string; handle: string; display_name: string | null; bio: string | null;
   follower_count: number | null; engagement_median: number | null; avg_views: number | null; avg_views_pinned: number | null;
@@ -62,6 +64,17 @@ function bar(label: string, val: string, width: number, color: string, note?: st
   );
 }
 
+function Section({ title, right, open = true, children }: { title: string; right?: ReactNode; open?: boolean; children: ReactNode }) {
+  return (
+    <details className="psec" open={open}>
+      <summary><span className="sec-t" style={{ margin: 0 }}>{title}</span>{right}<svg className="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6" /></svg></summary>
+      <div className="psec-body">{children}</div>
+    </details>
+  );
+}
+const collabHue = (s: string) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+const collabInitial = (s: string) => (s.replace(/[^\p{L}\p{N}]/gu, "")[0]?.toUpperCase() || "#");
+
 export type GenEmail = { subject: string; icebreaker: string; pitch: string };
 
 export function Detail({ r, onClose, email }: { r: Row; onClose: () => void; email?: GenEmail | null }) {
@@ -80,6 +93,7 @@ export function Detail({ r, onClose, email }: { r: Row; onClose: () => void; ema
   const emClass = r.email_type === "management" ? "em-mgmt" : r.email_type === "business_email" ? "em-biz" : "em-free";
   const emLabel = r.email_type === "management" ? "Management" : r.email_type === "business_email" ? "Business" : r.email_type === "freemail" ? "Freemail" : (r.email_type || "—");
   const adNote = (r.sponsored_count ?? 0) >= 2 ? `${r.sponsored_count} paid collabs → ad-experienced` : (r.sponsored_count === 1 ? "1 paid collab" : "no ads detected");
+  const brands = r.brands_worked_with || [];
 
   return (
     <>
@@ -106,9 +120,8 @@ export function Detail({ r, onClose, email }: { r: Row; onClose: () => void; ema
             <div className="src"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.3 3.7L17 7l-3.7 1.3L12 12l-1.3-3.7L7 7l3.7-1.3L12 2z"/></svg>Auto-profile from recent posts · real data only</div>
           </div>
         )}
-        <div><div className="sec-t">Bio</div><div className="bio">{r.bio || "—"}</div></div>
-        <div>
-          <div className="sec-t">Reach &amp; engagement</div>
+
+        <Section title="Reach & engagement">
           {bar("Engagement rate", `${r.engagement_median ?? "—"}%`, ((r.engagement_median ?? 0) / 14) * 100, erCol, (r.engagement_median ?? 0) >= 2 && (r.engagement_median ?? 0) <= 14 ? "in target band 2–14%" : "outside band")}
           <div className="stat twobar">
             <div className="stat-head"><span className="stat-label">Reach — typical vs. peak</span><span className="stat-val">{fmt(r.avg_views)}</span></div>
@@ -120,40 +133,59 @@ export function Detail({ r, onClose, email }: { r: Row; onClose: () => void; ema
               </>
             ) : <div className="stat-note">no pinned post</div>}
           </div>
-        </div>
-        <div className="kv">
-          <div className="cell"><div className="k">Followers</div><div className="v num">{fmt(r.follower_count)}</div></div>
-          <div className="cell"><div className="k">Total posts</div><div className="v num">{fmt(r.video_count)}</div></div>
-          <div className="cell"><div className="k">Posts / week</div><div className="v num">{r.posting_per_week ?? "—"}</div></div>
-          <div className="cell"><div className="k">Persona</div><div className="v sm">{r.persona ? (PERSONA[r.persona] || r.persona) : "—"}</div></div>
-        </div>
-        <div>
-          <div className="sec-t">Content</div>
+          <div className="kv" style={{ marginTop: 12 }}>
+            <div className="cell"><div className="k">Followers</div><div className="v num">{fmt(r.follower_count)}</div></div>
+            <div className="cell"><div className="k">Total posts</div><div className="v num">{fmt(r.video_count)}</div></div>
+            <div className="cell"><div className="k">Posts / week</div><div className="v num">{r.posting_per_week ?? "—"}</div></div>
+            <div className="cell"><div className="k">Persona</div><div className="v sm">{r.persona ? (PERSONA[r.persona] || r.persona) : "—"}</div></div>
+          </div>
+        </Section>
+
+        <Section title="Bio"><div className="bio">{r.bio || "—"}</div></Section>
+
+        <Section title="Content">
           <div className="tagrow" style={{ marginBottom: 14 }}>
             {r.category && <span className="pill cat">{r.category}</span>}
             {r.category_secondary && <span className="pill">{r.category_secondary}</span>}
             {(r.content_format || []).map(f => <span key={f} className="pill">{f}</span>)}
           </div>
           {bar('Own original sound — “speaks”', pct(r.original_sound_ratio), osr * 100, osr >= 0.5 ? "var(--wp-good)" : "var(--wp-muted)", osr >= 0.5 ? "mostly own audio → talks / narrates" : "mostly others’ sounds → music / lip-sync")}
-        </div>
-        <div>
-          <div className="aqhead"><div className="sec-t" style={{ margin: 0 }}>Audience quality</div><span className="aqbadge" style={{ background: vb[2], color: vb[1] }}>{vb[0]}</span></div>
+        </Section>
+
+        {((r.sponsored_count ?? 0) > 0 || (r.brands_worked_with || []).length > 0) && (
+          <Section title="Collaborations" right={brands.length > 0 ? <span className="aqbadge" style={{ background: "var(--wp-accsoft)", color: "var(--wp-accink)" }}>{brands.length}</span> : undefined}>
+            {brands.length > 0 && (
+              <>
+                <div className="collabrow">
+                  {brands.slice(0, 8).map(b => <div key={b} className="collab" title={b} style={{ background: `hsl(${collabHue(b)} 55% 47%)` }}>{collabInitial(b)}</div>)}
+                  {brands.length > 8 && <div className="collab more">+{brands.length - 8}</div>}
+                </div>
+                <div className="stat-note" style={{ marginTop: 8 }}>{brands.join(" · ")}</div>
+              </>
+            )}
+            <div className="stat-note" style={{ marginTop: brands.length ? 6 : 0 }}>{adNote}{r.last_placement_at ? ` · last placement ${r.last_placement_at}` : ""}</div>
+          </Section>
+        )}
+
+        <Section title="Audience quality" right={<span className="aqbadge" style={{ background: vb[2], color: vb[1] }}>{vb[0]}</span>}>
           {aqrow(flag, "Right audience", langGood ? `${Math.round(lm * 100)}% of commenters write in ${marketLang}` : `only ${Math.round(lm * 100)}% write in ${marketLang} — likely off-market`, langGood ? "good" : "bad")}
           {aqrow("💬", "Real engagement", subGood ? `${Math.round(sub * 100)}% of comments are genuine sentences (not bot/emoji)` : `just ${Math.round(sub * 100)}% real comments — mostly emoji or one-word`, subGood ? "good" : "warn")}
           {aqrow("↩︎", "Responsive creator", rrGood ? `engages ~${Math.round(rr * 100)}% of comments (likes / replies)` : (rr > 0 ? `rarely engages comments (~${Math.round(rr * 100)}%)` : "doesn't reply to comments"), rrGood ? "good" : "warn")}
-        </div>
-        {r.audience_lang && <div className="stat-note" style={{ marginTop: -8 }}>Audience language: {LANG[r.audience_lang] || r.audience_lang}</div>}
+          {r.audience_lang && <div className="stat-note" style={{ marginTop: 4 }}>Audience language: {LANG[r.audience_lang] || r.audience_lang}</div>}
+        </Section>
+
         {r.top_hashtags && r.top_hashtags.length > 0 && (
-          <div><div className="sec-t">Hashtags</div><div className="tagrow">{r.top_hashtags.map(h => <span key={h} className="pill ghost">#{h}</span>)}</div></div>
+          <Section title="Hashtags" open={false}>
+            <div className="tagrow">{r.top_hashtags.map(h => <span key={h} className="pill ghost">#{h}</span>)}</div>
+          </Section>
         )}
-        <div>
-          <div className="sec-t">Contact &amp; business</div>
+
+        <Section title="Contact">
           <div className="contact">
             <div className="cr"><div className="ci"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></div><div className="cx"><div className="k">Email</div><div className="v">{r.email || "—"}</div></div>{r.email_type && <span className={"tag-em " + emClass}>{emLabel}</span>}{r.email_difficulty && DIFF[r.email_difficulty] && <span title="Cold-email deliverability" style={{ background: DIFF[r.email_difficulty].color, color: "#fff", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, whiteSpace: "nowrap", marginLeft: 6 }}>{DIFF[r.email_difficulty].label}</span>}</div>
-            <div className="cr"><div className="ci"><svg viewBox="0 0 24 24"><path d="M20 7h-9M14 17H5M17 3l4 4-4 4M7 21l-4-4 4-4"/></svg></div><div className="cx"><div className="k">Brand experience</div><div className="v">{adNote}{r.last_placement_at ? ` · last placement ${r.last_placement_at}` : ""}</div>{(r.brands_worked_with || []).length > 0 && <div className="tagrow" style={{ marginTop: 6 }}>{(r.brands_worked_with || []).map(b => <span key={b} className="pill ghost">{b}</span>)}</div>}</div></div>
             {(r.source_value || r.source_brand) && <div className="cr"><div className="ci"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg></div><div className="cx"><div className="k">Found via</div><div className="v">{r.source_value || r.source_brand}</div></div></div>}
           </div>
-        </div>
+        </Section>
       </div>
       <div className="p-foot">
         <a className="btn primary" href={profileUrl(r)} target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8"/></svg>Open {r.platform === "instagram" ? "Instagram" : "TikTok"} profile</a>
