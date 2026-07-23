@@ -13,11 +13,11 @@ export type Row = {
   email: string | null; email_type: string | null; email_difficulty: string | null; market: string | null;
   source_type: string | null; source_value: string | null; source_brand: string | null;
   is_songpush_user: boolean | null; songpush_admin_url: string | null; platform: string | null;
-  brands_worked_with: string[] | null; last_placement_at: string | null;
+  brands_worked_with: string[] | null; last_placement_at: string | null; has_broadcast_channel: boolean | null;
 };
 
 export const COLS =
-  "sec_uid,handle,display_name,bio,follower_count,engagement_median,avg_views,avg_views_pinned,posting_per_week,video_count,sponsored_count,avatar_url,category,category_secondary,content_format,persona,audience_lang,original_sound_ratio,comment_substance_ratio,comment_lang_match,creator_reply_rate,top_hashtags,profile_summary,email,email_type,email_difficulty,market,source_type,source_value,source_brand,is_songpush_user,songpush_admin_url,platform,brands_worked_with,last_placement_at";
+  "sec_uid,handle,display_name,bio,follower_count,engagement_median,avg_views,avg_views_pinned,posting_per_week,video_count,sponsored_count,avatar_url,category,category_secondary,content_format,persona,audience_lang,original_sound_ratio,comment_substance_ratio,comment_lang_match,creator_reply_rate,top_hashtags,profile_summary,email,email_type,email_difficulty,market,source_type,source_value,source_brand,is_songpush_user,songpush_admin_url,platform,brands_worked_with,last_placement_at,has_broadcast_channel";
 
 export const CAT_HUE: Record<string, number> = { beauty:330,wellness:160,fitness:14,fashion:280,food:26,travel:200,gaming:250,tech:210,finance:150,music:190,comedy:45,parenting:340,"home & interior":175,sustainability:135,relationship:350,dance:300,pets:32,cars:220,education:230,art:265,lifestyle:255 };
 export const LANG: Record<string, string> = { de:"German", en:"English", mixed:"Mixed", un:"unclear" };
@@ -102,7 +102,7 @@ export function Detail({ r, onClose, email }: { r: Row; onClose: () => void; ema
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="nm">{r.display_name || r.handle}<span className="pf" style={{ padding: 3 }}><PlatIcon p={r.platform} /></span></div>
           <div className="hd">@{r.handle}</div>
-          <div><span className="loc">{marketFlag(r.market)}</span></div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><span className="loc">{marketFlag(r.market)}</span>{r.has_broadcast_channel && <span className="loc" style={{ background: "var(--wp-accsoft)", color: "var(--wp-accink)" }}>📡 Broadcast channel</span>}</div>
         </div>
         <button className="x" onClick={onClose}><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
