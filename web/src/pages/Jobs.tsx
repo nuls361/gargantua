@@ -156,6 +156,8 @@ function JobDetail({ id }: { id: string }) {
   const [panel, setPanel] = useState<Member | null>(null);
   const [editing, setEditing] = useState(false);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [sortKey, setSortKey] = useState("follower_count");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const reloadJob = useCallback(async () => {
     const { data } = await supabase.from("jobs").select("*").eq("id", id).single();
@@ -230,6 +232,11 @@ function JobDetail({ id }: { id: string }) {
 
   if (loading) return <div className="wp"><div className="empty">Loading…</div></div>;
   if (!job) return <div className="wp"><div className="empty">Job not found.</div></div>;
+  const sorted = [...members].sort((a, b) => {
+    const av = Number((a as Record<string, unknown>)[sortKey] ?? 0);
+    const bv = Number((b as Record<string, unknown>)[sortKey] ?? 0);
+    return sortDir === "asc" ? av - bv : bv - av;
+  });
 
   return (
     <div className="wp">
@@ -266,6 +273,12 @@ function JobDetail({ id }: { id: string }) {
       <div className="listhead" style={{ marginTop: 16 }}>
         <b>{members.length}</b><span>leads</span>
         <span className="grow" />
+        <select className="sortsel" value={sortKey} onChange={e => setSortKey(e.target.value)}>
+          <option value="follower_count">Followers</option>
+          <option value="engagement_median">Engagement</option>
+          <option value="avg_views">Avg views</option>
+        </select>
+        <button className="dirbtn" onClick={() => setSortDir(d => d === "desc" ? "asc" : "desc")} title="Sort direction">{sortDir === "desc" ? "↓" : "↑"}</button>
         <button className="dirbtn" style={{ width: "auto", padding: "0 12px", height: 34 }} onClick={generate} disabled={!members.length || generating}>
           {generating ? "Generating…" : "✨ Generate emails"}
         </button>
@@ -278,7 +291,7 @@ function JobDetail({ id }: { id: string }) {
 
       <div className="rows">
         {members.length === 0 ? <div className="empty">No leads yet. Source creators in <Link to="/search" style={{ color: "var(--wp-accink)" }}>Search</Link> (semantic, filters, or lookalike) and “Add to job”.</div>
-          : members.map(m => {
+          : sorted.map(m => {
             const em = emails[m.sec_uid];
             return (
               <div key={m.sec_uid} className={"crow" + (m.is_songpush_user ? " wepush" : "")} onClick={() => setPanel(m)}>
@@ -298,7 +311,6 @@ function JobDetail({ id }: { id: string }) {
                   <div className="metric"><div className="v num">{fmt(m.follower_count)}</div><div className="k">Followers</div></div>
                   <div className="metric"><div className={"v num " + erClass(m.engagement_median)}>{m.engagement_median ?? "—"}%</div><div className="k">ER</div></div>
                   <div className="metric"><div className="v num">{fmt(m.avg_views)}</div><div className="k">Avg views</div></div>
-                  {m.similarity >= 0 && <div className="metric"><div className="v num" style={{ color: "var(--wp-acc)" }}>{Math.round(m.similarity * 100)}</div><div className="k">Fit</div></div>}
                   {m.email && <span className="mail-dot" title={m.email_difficulty && DIFF[m.email_difficulty] ? `Email · ${DIFF[m.email_difficulty].label} to reach` : "Email available"} style={m.email_difficulty && DIFF[m.email_difficulty] ? { background: DIFF[m.email_difficulty].color } : undefined} />}
                   <a className="iconbtn" href={profileUrl(m)} target="_blank" rel="noreferrer" title="Open profile" onClick={e => e.stopPropagation()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
                 </div>
