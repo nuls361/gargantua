@@ -84,6 +84,9 @@ export default function Search() {
   const [lookDeb, setLookDeb] = useState("");
   const [lookIds, setLookIds] = useState<string[]>([]);
   const [lookLoading, setLookLoading] = useState(false);
+  const [lookMatched, setLookMatched] = useState<string[]>([]);
+  const [lookResolving, setLookResolving] = useState(false);
+  const [lookMsg, setLookMsg] = useState<string | null>(null);
   const [adv, setAdv] = useState(false);
 
   // filters
@@ -178,21 +181,33 @@ export default function Search() {
     return q as T;
   }, [mode, pDeb, semIds, lookActive, lookIds, market, platform, category, format, follMin, follMax, erMin, erMax, viewsMin, persona, lang, speak, vcMin, vcMax, postMin, src, srcVal, onmarket, engaged, responsive, adMin, etype, emailDiff, exclWp, contact]);
 
-  // Lookalike: compute the centroid of the pasted samples and get the nearest creators (ranked).
-  useEffect(() => {
-    if (!lookActive) { setLookIds([]); return; }
-    let cancelled = false;
+  // Lookalike: nearest creators to the samples' centroid + which samples are already in the pool.
+  const runLook = useCallback(async () => {
+    const handles = parseHandles(lookDeb);
+    if (!handles.length) { setLookIds([]); setLookMatched([]); return; }
     setLookLoading(true);
-    void (async () => {
-      const { data, error: err } = await supabase.rpc("lookalike_ids", { sample_handles: lookHandles, p_count: 500 });
-      if (cancelled) return;
-      if (err) setLookIds([]);
-      else setLookIds(((data ?? []) as { sec_uid: string }[]).map(r => r.sec_uid));
-      setLookLoading(false);
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const [ids, matched] = await Promise.all([
+      supabase.rpc("lookalike_ids", { sample_handles: handles, p_count: 500 }),
+      supabase.rpc("matched_samples", { sample_handles: handles }),
+    ]);
+    setLookIds(((ids.data ?? []) as { sec_uid: string }[]).map(r => r.sec_uid));
+    setLookMatched(((matched.data ?? []) as string[]).map(h => h.toLowerCase()));
+    setLookLoading(false);
   }, [lookDeb]);
+  useEffect(() => { void runLook(); }, [runLook]);
+
+  // Explicitly enrich + add the samples that aren't in the pool yet, then re-match.
+  async function resolveLook() {
+    const missing = lookHandles.filter(h => !lookMatched.includes(h.toLowerCase()));
+    if (!missing.length) return;
+    setLookResolving(true); setLookMsg(null);
+    const { data, error: err } = await supabase.functions.invoke("resolve-creators", { body: { handles: missing } });
+    setLookResolving(false);
+    if (err) { setLookMsg(err.message); return; }
+    const r = (data?.resolved ?? []).length, f = (data?.failed ?? []).length;
+    setLookMsg(`Added ${r} creator${r !== 1 ? "s" : ""} to the database${f ? ` · ${f} couldn't be resolved` : ""}.`);
+    await runLook();
+  }
 
   // Semantic search: embed the prompt server-side (OpenAI, via the edge fn) and
   // get back the cosine-nearest creators, ranked. semIds drives withFilters above.
@@ -361,7 +376,19 @@ export default function Search() {
               <div className="field" style={{ gridColumn: "1/-1" }}>
                 <label>Similar to these creators <span style={{ color: "var(--wp-muted)", textTransform: "none", letterSpacing: 0 }}>(paste handles or profile URLs — ranks by similarity, combines with every filter)</span></label>
                 <textarea className="inp" rows={2} placeholder={"@thatsonyi, @alicelich   or   https://www.tiktok.com/@…"} value={lookalike} onChange={e => setLookalike(e.target.value)} style={{ resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} />
-                {lookActive && <div style={{ fontSize: 12, color: "var(--wp-accink)", marginTop: 4, fontWeight: 600 }}>{lookLoading ? "Finding lookalikes…" : `${lookHandles.length} sample${lookHandles.length > 1 ? "s" : ""} · ${lookIds.length} similar creators`}</div>}
+                {lookActive && (
+                  <div style={{ fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ color: "var(--wp-accink)", fontWeight: 600 }}>
+                      {lookLoading ? "Finding lookalikes…" : `${lookMatched.length}/${lookHandles.length} samples in pool · ${lookIds.length} similar creators`}
+                    </span>
+                    {!lookLoading && lookMatched.length < lookHandles.length && (
+                      <button type="button" className="dirbtn" style={{ width: "auto", padding: "3px 11px", height: 26, fontSize: 12 }} onClick={resolveLook} disabled={lookResolving}>
+                        {lookResolving ? "Resolving…" : `＋ Add ${lookHandles.length - lookMatched.length} missing to DB`}
+                      </button>
+                    )}
+                    {lookMsg && <span style={{ color: "var(--wp-good)", fontWeight: 600 }}>{lookMsg}</span>}
+                  </div>
+                )}
               </div>
               <div className="fsec">Audience &amp; content</div>
               <div className="field"><label>Persona</label><select value={persona} onChange={e => setPersona(e.target.value)}><option value="">All personas</option><option value="solo">Solo</option><option value="couple">Couple</option><option value="family">Family</option><option value="group">Group</option></select></div>
