@@ -53,11 +53,8 @@ function JobsList() {
           : jobs.map(j => (
             <Link key={j.id} className="crow" to={`/jobs/${j.id}`} style={{ textDecoration: "none" }}>
               <div className="idcol">
-                <div className="nm">{j.title}<span className="pill" style={{ background: STATUS[j.status] || "#8A8F9C", color: "#fff", marginLeft: 8 }}>{j.status}</span></div>
+                <div className="nm">{j.title}</div>
                 <div className="hd">{j.subject || "—"}{j.briefing ? ` · ${j.briefing.slice(0, 80)}…` : ""}</div>
-              </div>
-              <div className="metrics">
-                <div className="metric"><div className="v num">{j.earning_min != null || j.earning_max != null ? `€${j.earning_min ?? 0}–${j.earning_max ?? "?"}` : "—"}</div><div className="k">Payout</div></div>
               </div>
             </Link>
           ))}
